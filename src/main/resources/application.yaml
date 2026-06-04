@@ -9,23 +9,42 @@ spring:
   # JPA & Hibernate Configuration
   jpa:
     hibernate:
-      # Let Flyway manage the schema, Hibernate should only validate it
-      ddl-auto: update
+      ddl-auto: validate
     show-sql: true
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
-        # Important: Tell Hibernate which schema to use for its operations
         default_schema: ai_study_hub
 
   # Flyway Migration Configuration
   flyway:
-    # Enable Flyway
     enabled: true
-    # The default schema for Flyway's metadata table
     default-schema: ai_study_hub
-    # Schemas to be managed by Flyway
     schemas: ai_study_hub
-    # Automatically create the schema if it doesn't exist
     create-schemas: true
+
+  # Mail Sender Configuration
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: your-email@gmail.com # <-- THAY ĐỔI: Email của bạn
+    password: your-app-password   # <-- THAY ĐỔI: Mật khẩu ứng dụng của bạn
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+# Application Specific Properties
+application:
+  security:
+    jwt:
+      secret-key: "404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970"
+      expiration: 900000 # 15 minutes
+      refresh-token:
+        expiration: 604800000 # 7 days
+  
+  # Frontend URL for password reset link
+  client-url: http://localhost:3000 # <-- THAY ĐỔI: URL của Frontend

@@ -1,4 +1,4 @@
-package com.java.aistudyhubbe.auth;
+package com.java.aistudyhubbe.dto.auth;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;

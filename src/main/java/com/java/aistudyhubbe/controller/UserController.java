@@ -1,32 +1,45 @@
 package com.java.aistudyhubbe.controller;
 
+import com.java.aistudyhubbe.dto.UserUpdateRequest;
 import com.java.aistudyhubbe.entity.User;
 import com.java.aistudyhubbe.service.UserService;
-import java.util.List;
-import java.util.UUID;
-import org.springframework.beans.factory.annotation.Autowired;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/users")
+@RequestMapping("/api/v1/users")
+@RequiredArgsConstructor
 public class UserController {
 
-    @Autowired
-    private UserService userService;
+    private final UserService userService;
 
-    @PostMapping
-    public ResponseEntity<User> createUser(@RequestBody User user) {
-        User savedUser = userService.saveUser(user);
-        return new ResponseEntity<>(savedUser, HttpStatus.CREATED);
+    @GetMapping("/me")
+    public ResponseEntity<User> getMyProfile() {
+        User currentUser = userService.getCurrentUser();
+        if (currentUser != null) {
+            return new ResponseEntity<>(currentUser, HttpStatus.OK);
+        } else {
+            return new ResponseEntity<>(HttpStatus.UNAUTHORIZED);
+        }
     }
+
+    @PutMapping("/profile")
+    public ResponseEntity<User> updateUserProfile(@Valid @RequestBody UserUpdateRequest userUpdateRequest) {
+        try {
+            User updatedUser = userService.updateUserProfile(userUpdateRequest);
+            return new ResponseEntity<>(updatedUser, HttpStatus.OK);
+        } catch (RuntimeException e) {
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+        }
+    }
+
+
 
     @GetMapping("/{id}")
     public ResponseEntity<User> getUserById(@PathVariable UUID id) {
