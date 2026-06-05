@@ -1,0 +1,20 @@
+# Build output
+bin/
+obj/
+
+# User-specific files
+*.user
+*.suo
+.vs/
+
+# Secrets — never commit these
+appsettings.Development.json
+appsettings.Production.json
+
+# EF Core migrations snapshot is OK to commit, but ignore local override
+*.db
+*.sqlite
+
+# OS
+.DS_Store
+Thumbs.db
