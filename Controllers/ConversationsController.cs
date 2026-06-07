@@ -18,10 +18,10 @@ public class ConversationsController(AppDbContext db, ClaudeService claude) : Co
     public async Task<ConversationListResponse> GetAll()
     {
         var uid = UserId();
-        var convs = await db.Conversations
+        var convs = await db.ChatSessions
             .Where(c => c.UserId == uid)
             .OrderByDescending(c => c.UpdatedAt)
-            .Select(c => new ConversationDto(c.Id, c.Title, c.DocumentId, c.UpdatedAt))
+            .Select(c => new ConversationDto(c.Id, c.Title, c.Documents.Select(d => (Guid?)d.Id).FirstOrDefault(), c.UpdatedAt))
             .ToListAsync();
         return new ConversationListResponse(convs);
     }
@@ -29,23 +29,27 @@ public class ConversationsController(AppDbContext db, ClaudeService claude) : Co
     [HttpPost]
     public async Task<IActionResult> Create(CreateConversationRequest req)
     {
-        var conv = new Conversation
+        var conv = new ChatSession
         {
             Title = req.Title ?? "Cuộc trò chuyện mới",
-            DocumentId = req.DocumentId,
             UserId = UserId(),
         };
-        db.Conversations.Add(conv);
+        if (req.DocumentId.HasValue) 
+        {
+            var doc = await db.Documents.FindAsync(req.DocumentId.Value);
+            if (doc != null) conv.Documents.Add(doc);
+        }
+        db.ChatSessions.Add(conv);
         await db.SaveChangesAsync();
-        return Ok(new { conversation = new ConversationDto(conv.Id, conv.Title, conv.DocumentId, conv.UpdatedAt) });
+        return Ok(new { conversation = new ConversationDto(conv.Id, conv.Title, req.DocumentId, conv.UpdatedAt) });
     }
 
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
-        var conv = await db.Conversations.FirstOrDefaultAsync(c => c.Id == id && c.UserId == UserId())
+        var conv = await db.ChatSessions.FirstOrDefaultAsync(c => c.Id == id && c.UserId == UserId())
             ?? throw new KeyNotFoundException("Cuộc trò chuyện không tồn tại.");
-        db.Conversations.Remove(conv);
+        db.ChatSessions.Remove(conv);
         await db.SaveChangesAsync();
         return Ok();
     }
@@ -54,13 +58,13 @@ public class ConversationsController(AppDbContext db, ClaudeService claude) : Co
     public async Task<MessageListResponse> GetMessages(Guid id)
     {
         var uid = UserId();
-        _ = await db.Conversations.FirstOrDefaultAsync(c => c.Id == id && c.UserId == uid)
+        _ = await db.ChatSessions.FirstOrDefaultAsync(c => c.Id == id && c.UserId == uid)
             ?? throw new KeyNotFoundException("Cuộc trò chuyện không tồn tại.");
 
-        var msgs = await db.Messages
-            .Where(m => m.ConversationId == id)
+        var msgs = await db.ChatMessages
+            .Where(m => m.SessionId == id)
             .OrderBy(m => m.CreatedAt)
-            .Select(m => new MessageDto(m.Id, m.Role, m.Content, m.TokensUsed, m.CreatedAt))
+            .Select(m => new MessageDto(m.Id, m.Role.ToString(), m.Content, 0, m.CreatedAt))
             .ToListAsync();
         return new MessageListResponse(msgs);
     }
@@ -69,12 +73,12 @@ public class ConversationsController(AppDbContext db, ClaudeService claude) : Co
     public async Task SendMessage(Guid id, [FromBody] SendMessageRequest req, CancellationToken ct)
     {
         var uid = UserId();
-        var conv = await db.Conversations.FirstOrDefaultAsync(c => c.Id == id && c.UserId == uid)
+        var conv = await db.ChatSessions.FirstOrDefaultAsync(c => c.Id == id && c.UserId == uid)
             ?? throw new KeyNotFoundException("Cuộc trò chuyện không tồn tại.");
 
         // Save user message
-        var userMsg = new Message { Role = "user", Content = req.Content, ConversationId = id };
-        db.Messages.Add(userMsg);
+        var userMsg = new ChatMessage { Role = ChatRole.user, Content = req.Content, SessionId = id };
+        db.ChatMessages.Add(userMsg);
         conv.UpdatedAt = DateTime.UtcNow;
         if (conv.Title == "Cuộc trò chuyện mới" && req.Content.Length > 0)
             conv.Title = req.Content[..Math.Min(40, req.Content.Length)];
@@ -86,7 +90,7 @@ public class ConversationsController(AppDbContext db, ClaudeService claude) : Co
         {
             var doc = await db.Documents.FindAsync(req.DocumentId.Value);
             if (doc is not null)
-                docContext = $"Tài liệu: {doc.Name}\nMô tả: {doc.Description ?? "Không có mô tả"}";
+                docContext = $"Tài liệu: {doc.Title}\nMô tả: {doc.Description ?? "Không có mô tả"}";
         }
 
         // Stream Claude response

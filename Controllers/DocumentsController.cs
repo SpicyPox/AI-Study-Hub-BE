@@ -24,11 +24,11 @@ public class DocumentsController(AppDbContext db, S3Service s3, IConfiguration c
         var query = db.Documents
             .Include(d => d.Subject)
             .Include(d => d.User)
-            .Where(d => d.UserId == uid && d.IsConfirmed);
+            .Where(d => d.UserId == uid && !d.IsDeleted);
 
         if (subjectId.HasValue) query = query.Where(d => d.SubjectId == subjectId);
-        if (!string.IsNullOrEmpty(type)) query = query.Where(d => d.Type == type);
-        if (!string.IsNullOrEmpty(q)) query = query.Where(d => d.Name.ToLower().Contains(q.ToLower()));
+        if (!string.IsNullOrEmpty(type)) query = query.Where(d => d.FileType == type);
+        if (!string.IsNullOrEmpty(q)) query = query.Where(d => d.Title.ToLower().Contains(q.ToLower()));
 
         var docs = await query.OrderByDescending(d => d.UpdatedAt).ToListAsync();
         return new DocumentListResponse(docs.Select(ToDto), docs.Count);
@@ -41,7 +41,7 @@ public class DocumentsController(AppDbContext db, S3Service s3, IConfiguration c
         var doc = await db.Documents
             .Include(d => d.Subject)
             .Include(d => d.User)
-            .FirstOrDefaultAsync(d => d.Id == id && (d.IsPublic || d.UserId == uid))
+            .FirstOrDefaultAsync(d => d.Id == id && (d.Visibility == DocVisibility.@public || d.UserId == uid))
             ?? throw new KeyNotFoundException("Tài liệu không tồn tại.");
         return ToDto(doc);
     }
@@ -54,10 +54,10 @@ public class DocumentsController(AppDbContext db, S3Service s3, IConfiguration c
         var s3Key = s3.BuildS3Key(uid, req.FileName);
         var doc = new Document
         {
-            Name = req.FileName,
-            Type = Path.GetExtension(req.FileName).TrimStart('.').ToLower(),
-            S3Key = s3Key,
+            Title = req.FileName,
+            FileType = Path.GetExtension(req.FileName).TrimStart('.').ToLower(),
             UserId = uid,
+            CloudFile = new CloudFile { CloudKey = s3Key, CloudUrl = "", Provider = "s3" }
         };
         db.Documents.Add(doc);
         await db.SaveChangesAsync();
@@ -77,14 +77,9 @@ public class DocumentsController(AppDbContext db, S3Service s3, IConfiguration c
             ?? throw new KeyNotFoundException("Tài liệu không tồn tại.");
 
         doc.SubjectId = req.SubjectId;
-        doc.Tags = req.Tags;
-        doc.IsPublic = req.IsPublic;
+        doc.Visibility = req.IsPublic ? DocVisibility.@public : DocVisibility.@private;
         doc.Description = req.Description;
-        doc.IsConfirmed = true;
         doc.UpdatedAt = DateTime.UtcNow;
-
-        if (req.IsPublic && doc.ShareToken is null)
-            doc.ShareToken = Guid.NewGuid().ToString("N");
 
         await db.SaveChangesAsync();
         return ToDto(doc);
@@ -100,10 +95,9 @@ public class DocumentsController(AppDbContext db, S3Service s3, IConfiguration c
             .FirstOrDefaultAsync(d => d.Id == id && d.UserId == UserId())
             ?? throw new KeyNotFoundException("Tài liệu không tồn tại.");
 
-        if (req.Name is not null) doc.Name = req.Name;
-        if (req.Tags is not null) doc.Tags = req.Tags;
+        if (req.Name is not null) doc.Title = req.Name;
         if (req.SubjectId.HasValue) doc.SubjectId = req.SubjectId;
-        if (req.IsPublic.HasValue) doc.IsPublic = req.IsPublic.Value;
+        if (req.IsPublic.HasValue) doc.Visibility = req.IsPublic.Value ? DocVisibility.@public : DocVisibility.@private;
         doc.UpdatedAt = DateTime.UtcNow;
 
         await db.SaveChangesAsync();
@@ -114,54 +108,27 @@ public class DocumentsController(AppDbContext db, S3Service s3, IConfiguration c
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
-        var doc = await db.Documents.FirstOrDefaultAsync(d => d.Id == id && d.UserId == UserId())
+        var doc = await db.Documents.Include(d => d.CloudFile).FirstOrDefaultAsync(d => d.Id == id && d.UserId == UserId())
             ?? throw new KeyNotFoundException("Tài liệu không tồn tại.");
-        await s3.DeleteObjectAsync(doc.S3Key);
+        if (doc.CloudFile != null) await s3.DeleteObjectAsync(doc.CloudFile.CloudKey);
         db.Documents.Remove(doc);
         await db.SaveChangesAsync();
         return Ok();
     }
 
-    [HttpGet("share/{shareToken}")]
-    public async Task<DocumentDto> GetShared(string shareToken)
-    {
-        var doc = await db.Documents
-            .Include(d => d.Subject)
-            .Include(d => d.User)
-            .FirstOrDefaultAsync(d => d.ShareToken == shareToken && d.IsPublic)
-            ?? throw new KeyNotFoundException("Tài liệu không tồn tại hoặc không công khai.");
-        return ToDto(doc);
-    }
-
     [Authorize]
-    [HttpPost("{id:guid}/share")]
-    public async Task<ShareResponse> CreateShare(Guid id)
+    [HttpGet("{id:guid}/download")]
+    public async Task<IActionResult> Download(Guid id)
     {
-        var doc = await db.Documents.FirstOrDefaultAsync(d => d.Id == id && d.UserId == UserId())
+        var doc = await db.Documents.Include(d => d.CloudFile).FirstOrDefaultAsync(d => d.Id == id && d.UserId == UserId())
             ?? throw new KeyNotFoundException("Tài liệu không tồn tại.");
 
-        doc.ShareToken ??= Guid.NewGuid().ToString("N");
-        doc.IsPublic = true;
-        doc.UpdatedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync();
+        if (doc.CloudFile == null || string.IsNullOrEmpty(doc.CloudFile.CloudKey))
+            return BadRequest("File không tồn tại trên cloud.");
 
-        var baseUrl = config["App:BaseUrl"] ?? "http://localhost:5173";
-        return new ShareResponse(doc.ShareToken, $"{baseUrl}/share/{doc.ShareToken}");
+        var url = s3.GetPresignedDownloadUrl(doc.CloudFile.CloudKey);
+        return Ok(new { Url = url });
     }
-
-    [Authorize]
-    [HttpDelete("{id:guid}/share")]
-    public async Task<IActionResult> RevokeShare(Guid id)
-    {
-        var doc = await db.Documents.FirstOrDefaultAsync(d => d.Id == id && d.UserId == UserId())
-            ?? throw new KeyNotFoundException("Tài liệu không tồn tại.");
-        doc.IsPublic = false;
-        doc.ShareToken = null;
-        doc.UpdatedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync();
-        return Ok();
-    }
-
     private Guid UserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
     private Guid? UserIdOrNull()
     {
@@ -180,12 +147,11 @@ public class DocumentsController(AppDbContext db, S3Service s3, IConfiguration c
     {
         var baseUrl = config["App:BaseUrl"] ?? "http://localhost:5173";
         return new DocumentDto(
-            d.Id, d.Name, d.Type, FormatSize(d.SizeBytes),
-            d.Description, d.Tags, d.Pages,
-            d.IsPublic, d.ShareToken,
-            d.ShareToken is not null ? $"{baseUrl}/share/{d.ShareToken}" : null,
-            d.SubjectId, d.Subject?.Name, d.Subject?.Color, d.Subject?.Code,
-            d.User?.Name ?? string.Empty, d.UpdatedAt, d.CreatedAt
+            d.Id, d.Title, d.FileType, FormatSize(d.FileSize ?? 0),
+            d.Description, Array.Empty<string>(), 0,
+            d.Visibility == DocVisibility.@public, null, null,
+            d.SubjectId, d.Subject?.Name, null, d.Subject?.Code,
+            d.User?.Username ?? string.Empty, d.UpdatedAt, d.CreatedAt
         );
     }
 }

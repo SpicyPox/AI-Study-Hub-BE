@@ -28,7 +28,6 @@ public class S3Service
     public string GetPresignedUploadUrl(string key, string contentType)
     {
         if (_isStub)
-            // Stub: return a local echo endpoint — frontend uploads here and we accept it
             return $"http://localhost:8080/api/stub/upload/{Uri.EscapeDataString(key)}";
 
         var request = new GetPreSignedUrlRequest
@@ -38,6 +37,21 @@ public class S3Service
             Verb = HttpVerb.PUT,
             Expires = DateTime.UtcNow.AddMinutes(5),
             ContentType = contentType,
+        };
+        return _s3!.GetPreSignedURL(request);
+    }
+
+    public string GetPresignedDownloadUrl(string key)
+    {
+        if (_isStub)
+            return $"http://localhost:8080/api/stub/download/{Uri.EscapeDataString(key)}";
+
+        var request = new GetPreSignedUrlRequest
+        {
+            BucketName = _bucket,
+            Key = key,
+            Verb = HttpVerb.GET,
+            Expires = DateTime.UtcNow.AddHours(1)
         };
         return _s3!.GetPreSignedURL(request);
     }

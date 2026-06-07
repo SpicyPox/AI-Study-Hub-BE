@@ -1,4 +1,6 @@
 using System.Text;
+using AIStudyHub.Api.Models;
+using Npgsql;
 using AIStudyHub.Api.Data;
 using AIStudyHub.Api.Middleware;
 using AIStudyHub.Api.Services;
@@ -8,8 +10,19 @@ using Microsoft.IdentityModel.Tokens;
 var builder = WebApplication.CreateBuilder(args);
 
 // Database
-builder.Services.AddDbContext<AppDbContext>(o =>
-    o.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
+#pragma warning disable CS0618 
+NpgsqlConnection.GlobalTypeMapper.MapEnum<UserRole>("ai_study_hub.user_role");
+NpgsqlConnection.GlobalTypeMapper.MapEnum<DocVisibility>("ai_study_hub.doc_visibility");
+NpgsqlConnection.GlobalTypeMapper.MapEnum<CloudStatus>("ai_study_hub.cloud_status");
+NpgsqlConnection.GlobalTypeMapper.MapEnum<ChatRole>("ai_study_hub.chat_role");
+NpgsqlConnection.GlobalTypeMapper.MapEnum<PaymentStatus>("ai_study_hub.payment_status");
+NpgsqlConnection.GlobalTypeMapper.MapEnum<PaymentMethod>("ai_study_hub.payment_method");
+#pragma warning restore CS0618 
+
+var dataSourceBuilder = new NpgsqlDataSourceBuilder(builder.Configuration.GetConnectionString("Default"));
+var dataSource = dataSourceBuilder.Build();
+
+builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(dataSource));
 
 // Auth
 var jwt = builder.Configuration.GetSection("Jwt");
@@ -65,12 +78,5 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
-// Auto-apply migrations on startup in development
-if (app.Environment.IsDevelopment())
-{
-    using var scope = app.Services.CreateScope();
-    var dbCtx = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    dbCtx.Database.Migrate();
-}
 
 app.Run();

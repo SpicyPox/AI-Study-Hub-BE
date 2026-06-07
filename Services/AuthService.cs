@@ -19,7 +19,7 @@ public class AuthService(AppDbContext db, IConfiguration config)
 
         var user = new User
         {
-            Name = req.Name,
+            Username = req.Name,
             Email = req.Email.ToLower(),
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
         };
@@ -36,28 +36,19 @@ public class AuthService(AppDbContext db, IConfiguration config)
         if (!BCrypt.Net.BCrypt.Verify(req.Password, user.PasswordHash))
             throw new UnauthorizedAccessException("Email hoặc mật khẩu không đúng.");
 
-        if (!user.IsActive)
-            throw new UnauthorizedAccessException("Tài khoản đã bị khoá.");
-
         return BuildAuthResponse(user);
     }
 
     public async Task<string> RefreshAsync(string refreshToken)
     {
-        var user = await db.Users.FirstOrDefaultAsync(u =>
-            u.RefreshToken == refreshToken && u.RefreshTokenExpiry > DateTime.UtcNow)
-            ?? throw new UnauthorizedAccessException("Refresh token không hợp lệ hoặc đã hết hạn.");
-
-        return GenerateAccessToken(user);
+        // TODO: Database First schema doesn't have RefreshToken column. Needs implementation using a separate table or adding column.
+        throw new NotImplementedException("Refresh token is currently not supported in the new database schema.");
     }
 
     public async Task LogoutAsync(Guid userId)
     {
-        var user = await db.Users.FindAsync(userId);
-        if (user is null) return;
-        user.RefreshToken = null;
-        user.RefreshTokenExpiry = null;
-        await db.SaveChangesAsync();
+        // TODO: Database First schema doesn't have RefreshToken column.
+        await Task.CompletedTask;
     }
 
     public async Task<UserDto> GetMeAsync(Guid userId)
@@ -72,7 +63,7 @@ public class AuthService(AppDbContext db, IConfiguration config)
         var user = await db.Users.FindAsync(userId)
             ?? throw new KeyNotFoundException("Người dùng không tồn tại.");
 
-        if (req.Name is not null) user.Name = req.Name;
+        if (req.Name is not null) user.Username = req.Name;
         if (req.Email is not null) user.Email = req.Email.ToLower();
 
         if (req.NewPassword is not null)
@@ -91,9 +82,8 @@ public class AuthService(AppDbContext db, IConfiguration config)
         var accessToken = GenerateAccessToken(user);
         var refreshToken = GenerateRefreshToken();
 
-        user.RefreshToken = refreshToken;
-        user.RefreshTokenExpiry = DateTime.UtcNow.AddDays(7);
-        db.SaveChanges();
+        // Note: The new DB schema doesn't store refresh tokens on the User table.
+        // We just return it for now.
 
         return new AuthResponse(ToDto(user), accessToken, refreshToken);
     }
@@ -106,7 +96,7 @@ public class AuthService(AppDbContext db, IConfiguration config)
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new Claim(ClaimTypes.Email, user.Email),
-            new Claim(ClaimTypes.Role, user.Role),
+            new Claim(ClaimTypes.Role, user.Role.ToString()),
         };
         var token = new JwtSecurityToken(
             issuer: config["Jwt:Issuer"],
@@ -120,5 +110,5 @@ public class AuthService(AppDbContext db, IConfiguration config)
     private static string GenerateRefreshToken() =>
         Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
 
-    private static UserDto ToDto(User u) => new(u.Id, u.Name, u.Email, u.Role);
+    private static UserDto ToDto(User u) => new(u.Id, u.Username, u.Email, u.Role.ToString());
 }

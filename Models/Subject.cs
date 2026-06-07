@@ -1,14 +1,21 @@
+﻿using System;
+using System.Collections.Generic;
+
 namespace AIStudyHub.Api.Models;
 
-public class Subject
+public partial class Subject
 {
-    public Guid Id { get; set; } = Guid.NewGuid();
-    public string Name { get; set; } = string.Empty;
-    public string Code { get; set; } = string.Empty;
-    public string Color { get; set; } = string.Empty;
-    public Guid UserId { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public Guid Id { get; set; }
 
-    public User User { get; set; } = null!;
-    public ICollection<Document> Documents { get; set; } = [];
+    public string? Code { get; set; }
+
+    public string Name { get; set; } = null!;
+
+    public string? Description { get; set; }
+
+    public DateTime CreatedAt { get; set; }
+
+    public DateTime UpdatedAt { get; set; }
+
+    public virtual ICollection<Document> Documents { get; set; } = new List<Document>();
 }
