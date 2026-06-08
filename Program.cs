@@ -7,6 +7,8 @@ using AIStudyHub.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Database
@@ -39,12 +41,25 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidAudience = jwt["Audience"],
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt["Key"]!)),
         };
+        o.Events = new JwtBearerEvents
+        {
+            OnAuthenticationFailed = context =>
+            {
+                Console.WriteLine("AUTH FAILED: " + context.Exception.Message);
+                return Task.CompletedTask;
+            },
+            OnChallenge = context =>
+            {
+                Console.WriteLine("AUTH CHALLENGE: " + context.Error + " - " + context.ErrorDescription);
+                return Task.CompletedTask;
+            }
+        };
     });
 builder.Services.AddAuthorization();
 
 // Services
 builder.Services.AddScoped<AuthService>();
-builder.Services.AddScoped<S3Service>();
+builder.Services.AddScoped<CloudinaryService>();
 builder.Services.AddScoped<ClaudeService>();
 builder.Services.AddHttpClient("Anthropic");
 
@@ -61,7 +76,29 @@ builder.Services.AddCors(o => o.AddPolicy("Frontend", p =>
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(o =>
+{
+    o.SwaggerDoc("v1", new Microsoft.OpenApi.OpenApiInfo
+    {
+        Title = "AI Study Hub API",
+        Version = "v1"
+    });
+
+
+    o.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = Microsoft.OpenApi.SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = Microsoft.OpenApi.ParameterLocation.Header,
+        Description = "Nhập Access Token JWT vào đây. Không cần gõ chữ 'Bearer'."
+    });
+
+
+    o.OperationFilter<AIStudyHub.Api.Filters.AuthHeaderFilter>();
+    o.DocumentFilter<AIStudyHub.Api.Filters.SecurityDocumentFilter>();
+});
 
 var app = builder.Build();
 

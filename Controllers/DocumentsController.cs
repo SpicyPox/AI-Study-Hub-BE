@@ -11,7 +11,7 @@ namespace AIStudyHub.Api.Controllers;
 
 [ApiController]
 [Route("api/documents")]
-public class DocumentsController(AppDbContext db, S3Service s3, IConfiguration config) : ControllerBase
+public class DocumentsController(AppDbContext db, CloudinaryService cloudinary) : ControllerBase
 {
     [Authorize]
     [HttpGet]
@@ -42,28 +42,63 @@ public class DocumentsController(AppDbContext db, S3Service s3, IConfiguration c
             .Include(d => d.Subject)
             .Include(d => d.User)
             .FirstOrDefaultAsync(d => d.Id == id && (d.Visibility == DocVisibility.@public || d.UserId == uid))
-            ?? throw new KeyNotFoundException("Tài liệu không tồn tại.");
+            ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
+
+        return ToDto(doc);
+    }
+
+    [Authorize]
+    [HttpPost("upload")]
+    [Consumes("multipart/form-data")]
+    public async Task<ActionResult<DocumentDto>> Upload([FromForm] UploadDocumentRequest req)
+    {
+        var file = req.File;
+        if (file is null || file.Length == 0)
+            return BadRequest("File khong hop le.");
+
+        // Kiểm tra SubjectId có tồn tại không (tránh lỗi FK constraint)
+        if (req.SubjectId.HasValue)
+        {
+            var subjectExists = await db.Subjects.AnyAsync(s => s.Id == req.SubjectId.Value);
+            if (!subjectExists)
+                return BadRequest($"SubjectId '{req.SubjectId}' không tồn tại. Hãy để trống nếu không muốn gắn môn học.");
+        }
+
+        var uid = UserId();
+        var upload = await cloudinary.UploadDocumentAsync(file, uid);
+
+        var doc = new Document
+        {
+            Title = Path.GetFileName(file.FileName),
+            Description = req.Description,
+            FileType = Path.GetExtension(file.FileName).TrimStart('.').ToLower(),
+            FileSize = file.Length,
+            SubjectId = req.SubjectId,
+            UserId = uid,
+            Visibility = req.IsPublic ? DocVisibility.@public : DocVisibility.@private,
+            CloudFile = new CloudFile
+            {
+                CloudKey = upload.PublicId,
+                CloudUrl = upload.SecureUrl,
+                Provider = "cloudinary",
+                Status = CloudStatus.uploaded
+            }
+        };
+
+        db.Documents.Add(doc);
+        await db.SaveChangesAsync();
+
+        await db.Entry(doc).Reference(d => d.Subject).LoadAsync();
+        await db.Entry(doc).Reference(d => d.User).LoadAsync();
+
         return ToDto(doc);
     }
 
     [Authorize]
     [HttpPost("upload-url")]
-    public async Task<UploadUrlResponse> GetUploadUrl(GetUploadUrlRequest req)
+    public IActionResult GetUploadUrl(GetUploadUrlRequest req)
     {
-        var uid = UserId();
-        var s3Key = s3.BuildS3Key(uid, req.FileName);
-        var doc = new Document
-        {
-            Title = req.FileName,
-            FileType = Path.GetExtension(req.FileName).TrimStart('.').ToLower(),
-            UserId = uid,
-            CloudFile = new CloudFile { CloudKey = s3Key, CloudUrl = "", Provider = "s3" }
-        };
-        db.Documents.Add(doc);
-        await db.SaveChangesAsync();
-
-        var url = s3.GetPresignedUploadUrl(s3Key, req.FileType);
-        return new UploadUrlResponse(url, doc.Id);
+        return BadRequest("Upload URL khong con duoc ho tro. Vui long dung POST /api/documents/upload voi multipart/form-data.");
     }
 
     [Authorize]
@@ -74,7 +109,7 @@ public class DocumentsController(AppDbContext db, S3Service s3, IConfiguration c
             .Include(d => d.Subject)
             .Include(d => d.User)
             .FirstOrDefaultAsync(d => d.Id == id && d.UserId == UserId())
-            ?? throw new KeyNotFoundException("Tài liệu không tồn tại.");
+            ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
 
         doc.SubjectId = req.SubjectId;
         doc.Visibility = req.IsPublic ? DocVisibility.@public : DocVisibility.@private;
@@ -93,7 +128,7 @@ public class DocumentsController(AppDbContext db, S3Service s3, IConfiguration c
             .Include(d => d.Subject)
             .Include(d => d.User)
             .FirstOrDefaultAsync(d => d.Id == id && d.UserId == UserId())
-            ?? throw new KeyNotFoundException("Tài liệu không tồn tại.");
+            ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
 
         if (req.Name is not null) doc.Title = req.Name;
         if (req.SubjectId.HasValue) doc.SubjectId = req.SubjectId;
@@ -109,8 +144,10 @@ public class DocumentsController(AppDbContext db, S3Service s3, IConfiguration c
     public async Task<IActionResult> Delete(Guid id)
     {
         var doc = await db.Documents.Include(d => d.CloudFile).FirstOrDefaultAsync(d => d.Id == id && d.UserId == UserId())
-            ?? throw new KeyNotFoundException("Tài liệu không tồn tại.");
-        if (doc.CloudFile != null) await s3.DeleteObjectAsync(doc.CloudFile.CloudKey);
+            ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
+
+        if (doc.CloudFile != null) await cloudinary.DeleteDocumentAsync(doc.CloudFile.CloudKey);
+
         db.Documents.Remove(doc);
         await db.SaveChangesAsync();
         return Ok();
@@ -121,15 +158,16 @@ public class DocumentsController(AppDbContext db, S3Service s3, IConfiguration c
     public async Task<IActionResult> Download(Guid id)
     {
         var doc = await db.Documents.Include(d => d.CloudFile).FirstOrDefaultAsync(d => d.Id == id && d.UserId == UserId())
-            ?? throw new KeyNotFoundException("Tài liệu không tồn tại.");
+            ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
 
-        if (doc.CloudFile == null || string.IsNullOrEmpty(doc.CloudFile.CloudKey))
-            return BadRequest("File không tồn tại trên cloud.");
+        if (doc.CloudFile == null || string.IsNullOrEmpty(doc.CloudFile.CloudUrl))
+            return BadRequest("File khong ton tai tren cloud.");
 
-        var url = s3.GetPresignedDownloadUrl(doc.CloudFile.CloudKey);
-        return Ok(new { Url = url });
+        return Ok(new { Url = doc.CloudFile.CloudUrl });
     }
+
     private Guid UserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
     private Guid? UserIdOrNull()
     {
         var val = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -145,9 +183,8 @@ public class DocumentsController(AppDbContext db, S3Service s3, IConfiguration c
 
     private DocumentDto ToDto(Document d)
     {
-        var baseUrl = config["App:BaseUrl"] ?? "http://localhost:5173";
         return new DocumentDto(
-            d.Id, d.Title, d.FileType, FormatSize(d.FileSize ?? 0),
+            d.Id, d.Title, d.FileType ?? string.Empty, FormatSize(d.FileSize ?? 0),
             d.Description, Array.Empty<string>(), 0,
             d.Visibility == DocVisibility.@public, null, null,
             d.SubjectId, d.Subject?.Name, null, d.Subject?.Code,
