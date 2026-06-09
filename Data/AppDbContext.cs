@@ -36,7 +36,7 @@ public partial class AppDbContext : DbContext
             entity.HasKey(e => e.Id).HasName("chat_messages_pkey");
             entity.ToTable("chat_messages", "ai_study_hub");
             entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()").HasColumnName("id");
-            entity.Property(e => e.Role).HasConversion<string>().HasColumnName("role").HasColumnType("ai_study_hub.chat_role");
+            entity.Property(e => e.Role).HasColumnName("role").HasColumnType("ai_study_hub.chat_role");
             entity.Property(e => e.Content).HasColumnName("content");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
             entity.Property(e => e.SessionId).HasColumnName("session_id");
@@ -87,7 +87,7 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()").HasColumnName("id");
             entity.Property(e => e.CloudKey).HasMaxLength(300).HasColumnName("cloud_key");
             entity.Property(e => e.CloudUrl).HasMaxLength(500).HasColumnName("cloud_url");
-            entity.Property(e => e.Status).HasConversion<string>().HasColumnName("status").HasColumnType("ai_study_hub.cloud_status");
+            entity.Property(e => e.Status).HasColumnName("status").HasColumnType("ai_study_hub.cloud_status");
             entity.Property(e => e.DocumentId).HasColumnName("document_id");
             entity.Property(e => e.Provider).HasMaxLength(20).HasColumnName("provider");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()").HasColumnName("updated_at");
@@ -111,7 +111,7 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.FilePath).HasMaxLength(500).HasColumnName("file_path");
             entity.Property(e => e.FileSize).HasColumnName("file_size");
             entity.Property(e => e.FileType).HasMaxLength(20).HasColumnName("file_type");
-            entity.Property(e => e.Visibility).HasConversion<string>().HasColumnName("visibility").HasColumnType("ai_study_hub.doc_visibility").HasDefaultValueSql("'public'");
+            entity.Property(e => e.Visibility).HasColumnName("visibility").HasColumnType("ai_study_hub.doc_visibility").HasDefaultValueSql("'public'");
             entity.Property(e => e.IsDeleted).HasDefaultValue(false).HasColumnName("is_deleted");
             entity.Property(e => e.SubjectId).HasColumnName("subject_id");
             entity.Property(e => e.Title).HasMaxLength(255).HasColumnName("title");
@@ -210,8 +210,8 @@ public partial class AppDbContext : DbContext
 
             entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()").HasColumnName("id");
             entity.Property(e => e.Amount).HasPrecision(12, 2).HasColumnName("amount");
-            entity.Property(e => e.Method).HasConversion<string>().HasColumnName("method").HasColumnType("ai_study_hub.payment_method");
-            entity.Property(e => e.Status).HasConversion<string>().HasColumnName("status").HasColumnType("ai_study_hub.payment_status");
+            entity.Property(e => e.Method).HasColumnName("method").HasColumnType("ai_study_hub.payment_method");
+            entity.Property(e => e.Status).HasColumnName("status").HasColumnType("ai_study_hub.payment_status");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
             entity.Property(e => e.PackageId).HasColumnName("package_id");
             entity.Property(e => e.StorageAddedBytes).HasColumnName("storage_added_bytes");
@@ -240,9 +240,11 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
             entity.Property(e => e.Email).HasMaxLength(255).HasColumnName("email");
             entity.Property(e => e.PasswordHash).HasMaxLength(255).HasColumnName("password_hash");
-            entity.Property(e => e.Role).HasConversion<string>().HasColumnName("role").HasColumnType("ai_study_hub.user_role").HasDefaultValueSql("'user'");
+            entity.Property(e => e.Role).HasColumnName("role").HasColumnType("ai_study_hub.user_role").HasDefaultValueSql("'user'");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()").HasColumnName("updated_at");
             entity.Property(e => e.Username).HasMaxLength(50).HasColumnName("username");
+            entity.Property(e => e.RefreshToken).HasMaxLength(255).HasColumnName("refresh_token");
+            entity.Property(e => e.RefreshTokenExpiry).HasColumnName("refresh_token_expiry");
         });
 
         modelBuilder.Entity<UserStorage>(entity =>

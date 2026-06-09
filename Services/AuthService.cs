@@ -10,7 +10,7 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace AIStudyHub.Api.Services;
 
-public class AuthService(AppDbContext db, IConfiguration config)
+public class AuthService(AppDbContext db, IConfiguration config, EmailService emailService)
 {
     public async Task<AuthResponse> RegisterAsync(RegisterRequest req)
     {
@@ -25,7 +25,7 @@ public class AuthService(AppDbContext db, IConfiguration config)
         };
         db.Users.Add(user);
         await db.SaveChangesAsync();
-        return BuildAuthResponse(user);
+        return await BuildAuthResponseAsync(user);
     }
 
     public async Task<AuthResponse> LoginAsync(LoginRequest req)
@@ -36,19 +36,26 @@ public class AuthService(AppDbContext db, IConfiguration config)
         if (!BCrypt.Net.BCrypt.Verify(req.Password, user.PasswordHash))
             throw new UnauthorizedAccessException("Email hoặc mật khẩu không đúng.");
 
-        return BuildAuthResponse(user);
+        return await BuildAuthResponseAsync(user);
     }
 
     public async Task<string> RefreshAsync(string refreshToken)
     {
-        // TODO: Database First schema doesn't have RefreshToken column. Needs implementation using a separate table or adding column.
-        throw new NotImplementedException("Refresh token is currently not supported in the new database schema.");
+        var user = await db.Users.FirstOrDefaultAsync(u => u.RefreshToken == refreshToken && u.RefreshTokenExpiry > DateTime.UtcNow)
+            ?? throw new UnauthorizedAccessException("Refresh token không hợp lệ hoặc đã hết hạn.");
+
+        return GenerateAccessToken(user);
     }
 
     public async Task LogoutAsync(Guid userId)
     {
-        // TODO: Database First schema doesn't have RefreshToken column.
-        await Task.CompletedTask;
+        var user = await db.Users.FindAsync(userId);
+        if (user != null)
+        {
+            user.RefreshToken = null;
+            user.RefreshTokenExpiry = null;
+            await db.SaveChangesAsync();
+        }
     }
 
     public async Task<UserDto> GetMeAsync(Guid userId)
@@ -77,13 +84,14 @@ public class AuthService(AppDbContext db, IConfiguration config)
         return ToDto(user);
     }
 
-    private AuthResponse BuildAuthResponse(User user)
+    private async Task<AuthResponse> BuildAuthResponseAsync(User user)
     {
         var accessToken = GenerateAccessToken(user);
         var refreshToken = GenerateRefreshToken();
 
-        // Note: The new DB schema doesn't store refresh tokens on the User table.
-        // We just return it for now.
+        user.RefreshToken = refreshToken;
+        user.RefreshTokenExpiry = DateTime.UtcNow.AddDays(7);
+        await db.SaveChangesAsync();
 
         return new AuthResponse(ToDto(user), accessToken, refreshToken);
     }
@@ -109,6 +117,57 @@ public class AuthService(AppDbContext db, IConfiguration config)
 
     private static string GenerateRefreshToken() =>
         Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
+
+    public async Task ForgotPasswordAsync(ForgotPasswordRequest req)
+    {
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Email == req.Email.ToLower())
+            ?? throw new KeyNotFoundException("Email không tồn tại trong hệ thống.");
+
+        var code = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
+
+        var resetToken = new PasswordResetToken
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            Token = code,
+            IsUsed = false,
+            ExpiresAt = DateTime.UtcNow.AddMinutes(15),
+            CreatedAt = DateTime.UtcNow
+        };
+
+        db.PasswordResetTokens.Add(resetToken);
+        await db.SaveChangesAsync();
+
+        var subject = "[AI Study Hub] Mã xác thực đặt lại mật khẩu";
+        var body = $@"
+            <div style='font-family: Arial, sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 5px; max-width: 600px;'>
+                <h2 style='color: #4A90E2;'>Đặt lại mật khẩu</h2>
+                <p>Xin chào <b>{user.Username}</b>,</p>
+                <p>Bạn đã yêu cầu đặt lại mật khẩu cho tài khoản tại AI Study Hub.</p>
+                <p>Dưới đây là mã xác thực của bạn (có hiệu lực trong 15 phút):</p>
+                <div style='background: #f4f4f4; padding: 15px; font-size: 24px; font-weight: bold; letter-spacing: 5px; text-align: center; border-radius: 4px; color: #333;'>
+                    {code}
+                </div>
+                <p>Nếu bạn không gửi yêu cầu này, vui lòng bỏ qua email này.</p>
+                <br>
+                <p>Trân trọng,<br>Đội ngũ AI Study Hub</p>
+            </div>";
+
+        await emailService.SendEmailAsync(user.Email, subject, body);
+    }
+
+    public async Task ResetPasswordAsync(ResetPasswordRequest req)
+    {
+        var resetToken = await db.PasswordResetTokens
+            .Include(t => t.User)
+            .FirstOrDefaultAsync(t => t.Token == req.Token && !t.IsUsed && t.ExpiresAt > DateTime.UtcNow)
+            ?? throw new InvalidOperationException("Mã xác thực không hợp lệ, đã được sử dụng hoặc đã hết hạn.");
+
+        resetToken.User.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.NewPassword);
+        resetToken.IsUsed = true;
+
+        await db.SaveChangesAsync();
+    }
 
     private static UserDto ToDto(User u) => new(u.Id, u.Username, u.Email, u.Role.ToString());
 }

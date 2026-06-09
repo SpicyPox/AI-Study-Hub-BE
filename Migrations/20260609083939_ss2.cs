@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace AIStudyHub.Api.Migrations
 {
     /// <inheritdoc />
-    public partial class ssssss : Migration
+    public partial class ss2 : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -81,7 +81,9 @@ namespace AIStudyHub.Api.Migrations
                     password_hash = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
                     role = table.Column<string>(type: "ai_study_hub.user_role", nullable: false, defaultValueSql: "'user'"),
                     created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()"),
-                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()")
+                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()"),
+                    refresh_token = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
+                    refresh_token_expiry = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
                 },
                 constraints: table =>
                 {

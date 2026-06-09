@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AIStudyHub.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260609075329_ssssss")]
-    partial class ssssss
+    [Migration("20260609083939_ss2")]
+    partial class ss2
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -481,6 +481,15 @@ namespace AIStudyHub.Api.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)")
                         .HasColumnName("password_hash");
+
+                    b.Property<string>("RefreshToken")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("refresh_token");
+
+                    b.Property<DateTime?>("RefreshTokenExpiry")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("refresh_token_expiry");
 
                     b.Property<string>("Role")
                         .IsRequired()

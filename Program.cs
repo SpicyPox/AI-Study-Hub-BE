@@ -11,9 +11,26 @@ using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var dataSource = new NpgsqlDataSourceBuilder(builder.Configuration.GetConnectionString("Default")).Build();
+var dataSourceBuilder = new NpgsqlDataSourceBuilder(builder.Configuration.GetConnectionString("Default"));
+dataSourceBuilder.MapEnum<UserRole>("ai_study_hub.user_role");
+dataSourceBuilder.MapEnum<DocVisibility>("ai_study_hub.doc_visibility");
+dataSourceBuilder.MapEnum<CloudStatus>("ai_study_hub.cloud_status");
+dataSourceBuilder.MapEnum<ChatRole>("ai_study_hub.chat_role");
+dataSourceBuilder.MapEnum<PaymentStatus>("ai_study_hub.payment_status");
+dataSourceBuilder.MapEnum<PaymentMethod>("ai_study_hub.payment_method");
+dataSourceBuilder.EnableUnmappedTypes();
+var dataSource = dataSourceBuilder.Build();
 
-builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(dataSource));
+builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(dataSource, x =>
+{
+    x.MapEnum<UserRole>("user_role", "ai_study_hub");
+    x.MapEnum<DocVisibility>("doc_visibility", "ai_study_hub");
+    x.MapEnum<CloudStatus>("cloud_status", "ai_study_hub");
+    x.MapEnum<ChatRole>("chat_role", "ai_study_hub");
+    x.MapEnum<PaymentStatus>("payment_status", "ai_study_hub");
+    x.MapEnum<PaymentMethod>("payment_method", "ai_study_hub");
+    x.MigrationsHistoryTable("__EFMigrationsHistory", "ai_study_hub");
+}));
 
 var jwt = builder.Configuration.GetSection("Jwt");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -45,6 +62,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization();
 
+builder.Services.AddScoped<EmailService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<CloudinaryService>();
 builder.Services.AddScoped<ClaudeService>();
@@ -86,11 +104,7 @@ builder.Services.AddSwaggerGen(o =>
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.Migrate();
-}
+
 
 app.UseMiddleware<ErrorHandlingMiddleware>();
 app.UseCors("Frontend");
