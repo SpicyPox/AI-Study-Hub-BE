@@ -11,22 +11,10 @@ using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Database
-#pragma warning disable CS0618 
-NpgsqlConnection.GlobalTypeMapper.MapEnum<UserRole>("ai_study_hub.user_role");
-NpgsqlConnection.GlobalTypeMapper.MapEnum<DocVisibility>("ai_study_hub.doc_visibility");
-NpgsqlConnection.GlobalTypeMapper.MapEnum<CloudStatus>("ai_study_hub.cloud_status");
-NpgsqlConnection.GlobalTypeMapper.MapEnum<ChatRole>("ai_study_hub.chat_role");
-NpgsqlConnection.GlobalTypeMapper.MapEnum<PaymentStatus>("ai_study_hub.payment_status");
-NpgsqlConnection.GlobalTypeMapper.MapEnum<PaymentMethod>("ai_study_hub.payment_method");
-#pragma warning restore CS0618 
-
-var dataSourceBuilder = new NpgsqlDataSourceBuilder(builder.Configuration.GetConnectionString("Default"));
-var dataSource = dataSourceBuilder.Build();
+var dataSource = new NpgsqlDataSourceBuilder(builder.Configuration.GetConnectionString("Default")).Build();
 
 builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(dataSource));
 
-// Auth
 var jwt = builder.Configuration.GetSection("Jwt");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(o =>
@@ -57,13 +45,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization();
 
-// Services
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<CloudinaryService>();
 builder.Services.AddScoped<ClaudeService>();
 builder.Services.AddHttpClient("Anthropic");
 
-// CORS — allow frontend dev server
 builder.Services.AddCors(o => o.AddPolicy("Frontend", p =>
     p.WithOrigins(
         "http://localhost:5173",
@@ -84,7 +70,6 @@ builder.Services.AddSwaggerGen(o =>
         Version = "v1"
     });
 
-
     o.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.OpenApiSecurityScheme
     {
         Name = "Authorization",
@@ -95,12 +80,17 @@ builder.Services.AddSwaggerGen(o =>
         Description = "Nhập Access Token JWT vào đây. Không cần gõ chữ 'Bearer'."
     });
 
-
     o.OperationFilter<AIStudyHub.Api.Filters.AuthHeaderFilter>();
     o.DocumentFilter<AIStudyHub.Api.Filters.SecurityDocumentFilter>();
 });
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate();
+}
 
 app.UseMiddleware<ErrorHandlingMiddleware>();
 app.UseCors("Frontend");
@@ -114,6 +104,5 @@ if (app.Environment.IsDevelopment())
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
-
 
 app.Run();
