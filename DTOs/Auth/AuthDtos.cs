@@ -7,3 +7,7 @@ public record UpdateMeRequest(string? Name, string? Email, string? CurrentPasswo
 
 public record UserDto(Guid Id, string Name, string Email, string Role);
 public record AuthResponse(UserDto User, string AccessToken, string RefreshToken);
+
+public record ForgotPasswordRequest(string Email);
+public record ResetPasswordRequest(string Token, string NewPassword);
+

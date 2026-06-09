@@ -28,6 +28,10 @@ public partial class User
 
     public DateTime UpdatedAt { get; set; }
 
+    public string? RefreshToken { get; set; }
+
+    public DateTime? RefreshTokenExpiry { get; set; }
+
     public virtual ICollection<ChatSession> ChatSessions { get; set; } = new List<ChatSession>();
 
     public virtual ICollection<Document> Documents { get; set; } = new List<Document>();

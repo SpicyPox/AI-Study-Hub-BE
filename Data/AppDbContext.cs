@@ -41,13 +41,6 @@ public partial class AppDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder
-            .HasPostgresEnum<ChatRole>("ai_study_hub", "chat_role")
-            .HasPostgresEnum<CloudStatus>("ai_study_hub", "cloud_status")
-            .HasPostgresEnum<DocVisibility>("ai_study_hub", "doc_visibility")
-            .HasPostgresEnum<PaymentMethod>("ai_study_hub", "payment_method")
-            .HasPostgresEnum<PaymentStatus>("ai_study_hub", "payment_status")
-            .HasPostgresEnum<UserRole>("ai_study_hub", "user_role");
 
         modelBuilder.Entity<ChatMessage>(entity =>
         {
@@ -59,9 +52,7 @@ public partial class AppDbContext : DbContext
                 .HasDefaultValueSql("gen_random_uuid()")
                 .HasColumnName("id");
             entity.Property(e => e.Role)
-                .HasConversion<string>()
-                .HasColumnName("role")
-                .HasColumnType("ai_study_hub.chat_role");
+                .HasColumnName("role");
             entity.Property(e => e.Content).HasColumnName("content");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("now()")
@@ -133,9 +124,7 @@ public partial class AppDbContext : DbContext
                 .HasMaxLength(500)
                 .HasColumnName("cloud_url");
             entity.Property(e => e.Status)
-                .HasConversion<string>()
-                .HasColumnName("status")
-                .HasColumnType("ai_study_hub.cloud_status");
+                .HasColumnName("status");
             entity.Property(e => e.DocumentId).HasColumnName("document_id");
             entity.Property(e => e.Provider)
                 .HasMaxLength(20)
@@ -179,9 +168,7 @@ public partial class AppDbContext : DbContext
                 .HasMaxLength(20)
                 .HasColumnName("file_type");
             entity.Property(e => e.Visibility)
-                .HasConversion<string>()
-                .HasColumnName("visibility")
-                .HasColumnType("ai_study_hub.doc_visibility");
+                .HasColumnName("visibility");
             entity.Property(e => e.IsDeleted)
                 .HasComment("Cờ Xóa mềm (Soft Delete). Đổi thành TRUE thì file chui vào thùng rác, giữ lại được 30 ngày để khôi phục thay vì bốc hơi vĩnh viễn.")
                 .HasColumnName("is_deleted");
@@ -333,13 +320,9 @@ public partial class AppDbContext : DbContext
                 .HasPrecision(12, 2)
                 .HasColumnName("amount");
             entity.Property(e => e.Method)
-                .HasConversion<string>()
-                .HasColumnName("method")
-                .HasColumnType("ai_study_hub.payment_method");
+                .HasColumnName("method");
             entity.Property(e => e.Status)
-                .HasConversion<string>()
-                .HasColumnName("status")
-                .HasColumnType("ai_study_hub.payment_status");
+                .HasColumnName("status");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("now()")
                 .HasColumnName("created_at");
@@ -388,15 +371,20 @@ public partial class AppDbContext : DbContext
                 .HasComment("Nguyên tắc tử huyệt: Không bao giờ lưu mật khẩu gốc (plaintext). Cột này lưu chuỗi đã mã hóa một chiều (Bcrypt/Argon2).")
                 .HasColumnName("password_hash");
             entity.Property(e => e.Role)
-                .HasConversion<string>()
-                .HasColumnName("role")
-                .HasColumnType("ai_study_hub.user_role");
+                .HasColumnName("role");
             entity.Property(e => e.UpdatedAt)
                 .HasDefaultValueSql("now()")
                 .HasColumnName("updated_at");
             entity.Property(e => e.Username)
                 .HasMaxLength(50)
                 .HasColumnName("username");
+
+            entity.Property(e => e.RefreshToken)
+                .HasMaxLength(255)
+                .HasColumnName("refresh_token");
+
+            entity.Property(e => e.RefreshTokenExpiry)
+                .HasColumnName("refresh_token_expiry");
         });
 
         modelBuilder.Entity<UserStorage>(entity =>

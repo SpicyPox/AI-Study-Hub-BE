@@ -12,19 +12,25 @@ using Microsoft.OpenApi;
 var builder = WebApplication.CreateBuilder(args);
 
 // Database
-#pragma warning disable CS0618 
-NpgsqlConnection.GlobalTypeMapper.MapEnum<UserRole>("ai_study_hub.user_role");
-NpgsqlConnection.GlobalTypeMapper.MapEnum<DocVisibility>("ai_study_hub.doc_visibility");
-NpgsqlConnection.GlobalTypeMapper.MapEnum<CloudStatus>("ai_study_hub.cloud_status");
-NpgsqlConnection.GlobalTypeMapper.MapEnum<ChatRole>("ai_study_hub.chat_role");
-NpgsqlConnection.GlobalTypeMapper.MapEnum<PaymentStatus>("ai_study_hub.payment_status");
-NpgsqlConnection.GlobalTypeMapper.MapEnum<PaymentMethod>("ai_study_hub.payment_method");
-#pragma warning restore CS0618 
-
 var dataSourceBuilder = new NpgsqlDataSourceBuilder(builder.Configuration.GetConnectionString("Default"));
+dataSourceBuilder.MapEnum<UserRole>("ai_study_hub.user_role");
+dataSourceBuilder.MapEnum<DocVisibility>("ai_study_hub.doc_visibility");
+dataSourceBuilder.MapEnum<CloudStatus>("ai_study_hub.cloud_status");
+dataSourceBuilder.MapEnum<ChatRole>("ai_study_hub.chat_role");
+dataSourceBuilder.MapEnum<PaymentStatus>("ai_study_hub.payment_status");
+dataSourceBuilder.MapEnum<PaymentMethod>("ai_study_hub.payment_method");
 var dataSource = dataSourceBuilder.Build();
 
-builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(dataSource));
+builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(dataSource, x =>
+{
+    x.MapEnum<UserRole>("ai_study_hub.user_role");
+    x.MapEnum<DocVisibility>("ai_study_hub.doc_visibility");
+    x.MapEnum<CloudStatus>("ai_study_hub.cloud_status");
+    x.MapEnum<ChatRole>("ai_study_hub.chat_role");
+    x.MapEnum<PaymentStatus>("ai_study_hub.payment_status");
+    x.MapEnum<PaymentMethod>("ai_study_hub.payment_method");
+    x.MigrationsHistoryTable("__EFMigrationsHistory", "ai_study_hub");
+}));
 
 // Auth
 var jwt = builder.Configuration.GetSection("Jwt");
@@ -58,6 +64,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 // Services
+builder.Services.AddScoped<EmailService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<CloudinaryService>();
 builder.Services.AddScoped<ClaudeService>();
@@ -101,6 +108,7 @@ builder.Services.AddSwaggerGen(o =>
 });
 
 var app = builder.Build();
+
 
 app.UseMiddleware<ErrorHandlingMiddleware>();
 app.UseCors("Frontend");

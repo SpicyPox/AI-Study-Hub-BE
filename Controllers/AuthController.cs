@@ -42,5 +42,19 @@ public class AuthController(AuthService authService) : ControllerBase
     public async Task<UserDto> UpdateMe(UpdateMeRequest req) =>
         await authService.UpdateMeAsync(UserId(), req);
 
+    [HttpPost("forgot-password")]
+    public async Task<IActionResult> ForgotPassword(ForgotPasswordRequest req)
+    {
+        await authService.ForgotPasswordAsync(req);
+        return Ok(new { message = "Mã xác thực đã được gửi về email của bạn." });
+    }
+
+    [HttpPost("reset-password")]
+    public async Task<IActionResult> ResetPassword(ResetPasswordRequest req)
+    {
+        await authService.ResetPasswordAsync(req);
+        return Ok(new { message = "Mật khẩu đã được thay đổi thành công." });
+    }
+
     private Guid UserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 }
