@@ -13,18 +13,29 @@ namespace AIStudyHub.Api.Controllers;
 [Route("api/documents")]
 public class DocumentsController(AppDbContext db, CloudinaryService cloudinary) : ControllerBase
 {
+    // Maximum allowed upload size per file (50 MB).
+    private const long MaxUploadBytes = 50L * 1024 * 1024;
+
     [Authorize]
     [HttpGet]
     public async Task<DocumentListResponse> GetAll(
         [FromQuery] Guid? subjectId,
         [FromQuery] string? type,
-        [FromQuery] string? q)
+        [FromQuery] string? q,
+        [FromQuery] string? scope)
     {
         var uid = UserId();
         var query = db.Documents
             .Include(d => d.Subject)
             .Include(d => d.User)
-            .Where(d => d.UserId == uid && !d.IsDeleted);
+            .Where(d => !d.IsDeleted);
+
+        // scope=public  -> browse public documents shared by everyone (the community hub).
+        // default (mine) -> only the current user's own documents.
+        if (string.Equals(scope, "public", StringComparison.OrdinalIgnoreCase))
+            query = query.Where(d => d.Visibility == DocVisibility.@public);
+        else
+            query = query.Where(d => d.UserId == uid);
 
         if (subjectId.HasValue) query = query.Where(d => d.SubjectId == subjectId);
         if (!string.IsNullOrEmpty(type)) query = query.Where(d => d.FileType == type);
@@ -50,11 +61,16 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary) 
     [Authorize]
     [HttpPost("upload")]
     [Consumes("multipart/form-data")]
+    [RequestSizeLimit(MaxUploadBytes)]
+    [RequestFormLimits(MultipartBodyLengthLimit = MaxUploadBytes)]
     public async Task<ActionResult<DocumentDto>> Upload([FromForm] UploadDocumentRequest req)
     {
         var file = req.File;
         if (file is null || file.Length == 0)
             return BadRequest("File khong hop le.");
+
+        if (file.Length > MaxUploadBytes)
+            return BadRequest("File vuot qua gioi han 50 MB.");
 
         // Kiểm tra SubjectId có tồn tại không (tránh lỗi FK constraint)
         if (req.SubjectId.HasValue)
