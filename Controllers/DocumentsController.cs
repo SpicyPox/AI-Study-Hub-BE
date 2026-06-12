@@ -111,13 +111,6 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary) 
     }
 
     [Authorize]
-    [HttpPost("upload-url")]
-    public IActionResult GetUploadUrl(GetUploadUrlRequest req)
-    {
-        return BadRequest("Upload URL khong con duoc ho tro. Vui long dung POST /api/documents/upload voi multipart/form-data.");
-    }
-
-    [Authorize]
     [HttpPost("{id:guid}/confirm")]
     public async Task<DocumentDto> Confirm(Guid id, ConfirmUploadRequest req)
     {

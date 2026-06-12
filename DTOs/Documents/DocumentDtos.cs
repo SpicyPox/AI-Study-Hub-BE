@@ -1,6 +1,5 @@
 namespace AIStudyHub.Api.DTOs.Documents;
 
-public record GetUploadUrlRequest(string FileName, string FileType);
 public class UploadDocumentRequest
 {
     public IFormFile? File { get; set; }
@@ -21,5 +20,4 @@ public record DocumentDto(
 );
 
 public record DocumentListResponse(IEnumerable<DocumentDto> Documents, int Total);
-public record UploadUrlResponse(string UploadUrl, Guid DocumentId);
 public record ShareResponse(string ShareToken, string ShareUrl);
