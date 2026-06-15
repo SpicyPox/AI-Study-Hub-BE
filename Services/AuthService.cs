@@ -17,6 +17,9 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
         if (await db.Users.AnyAsync(u => u.Email == req.Email))
             throw new InvalidOperationException("Email đã được sử dụng.");
 
+        if (await db.Users.AnyAsync(u => u.Username == req.Name))
+            throw new InvalidOperationException("Tên người dùng đã được sử dụng.");
+
         var user = new User
         {
             Username = req.Name,
