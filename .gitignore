@@ -1,33 +1,25 @@
-HELP.md
-target/
-.mvn/wrapper/maven-wrapper.jar
-!**/src/main/**/target/
-!**/src/test/**/target/
+# Build output
+bin/
+obj/
 
-### STS ###
-.apt_generated
-.classpath
-.factorypath
-.project
-.settings
-.springBeans
-.sts4-cache
+# User-specific files
+*.user
+*.suo
+.vs/
 
-### IntelliJ IDEA ###
-.idea
-*.iws
-*.iml
-*.ipr
-
-### NetBeans ###
-/nbproject/private/
-/nbbuild/
-/dist/
-/nbdist/
-/.nb-gradle/
-build/
-!**/src/main/**/build/
-!**/src/test/**/build/
-
-### VS Code ###
+# IDE files
+.idea/
 .vscode/
+*.iml
+
+# Secrets — never commit these
+appsettings.Development.json
+appsettings.Production.json
+
+# EF Core migrations snapshot is OK to commit, but ignore local override
+*.db
+*.sqlite
+
+# OS
+.DS_Store
+Thumbs.db
