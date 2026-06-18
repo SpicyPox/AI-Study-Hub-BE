@@ -120,6 +120,9 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary) 
             .FirstOrDefaultAsync(d => d.Id == id && d.UserId == UserId())
             ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
 
+        if (req.SubjectId.HasValue && !await db.Subjects.AnyAsync(s => s.Id == req.SubjectId.Value))
+            throw new InvalidOperationException($"SubjectId '{req.SubjectId}' không tồn tại.");
+
         doc.SubjectId = req.SubjectId;
         doc.Visibility = req.IsPublic ? DocVisibility.@public : DocVisibility.@private;
         doc.Description = req.Description;
@@ -140,7 +143,13 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary) 
             ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
 
         if (req.Name is not null) doc.Title = req.Name;
-        if (req.SubjectId.HasValue) doc.SubjectId = req.SubjectId;
+        
+        if (req.SubjectId.HasValue) 
+        {
+            if (!await db.Subjects.AnyAsync(s => s.Id == req.SubjectId.Value))
+                throw new InvalidOperationException($"SubjectId '{req.SubjectId}' không tồn tại.");
+            doc.SubjectId = req.SubjectId;
+        }
         if (req.IsPublic.HasValue) doc.Visibility = req.IsPublic.Value ? DocVisibility.@public : DocVisibility.@private;
         doc.UpdatedAt = DateTime.UtcNow;
 
