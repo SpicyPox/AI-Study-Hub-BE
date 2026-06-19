@@ -5,7 +5,7 @@ namespace AIStudyHub.Api.DTOs.Auth;
 public record RegisterRequest(
     [Required] string Name, 
     [Required, EmailAddress] string Email, 
-    [Required, MinLength(6)] string Password
+    [Required, MinLength(8)] string Password
 );
 
 public record LoginRequest(
@@ -17,11 +17,13 @@ public record RefreshRequest(
     [Required] string RefreshToken
 );
 
+public record RefreshResponse(string AccessToken, string RefreshToken);
+
 public record UpdateMeRequest(
     string? Name, 
     [EmailAddress] string? Email, 
     string? CurrentPassword, 
-    [MinLength(6)] string? NewPassword
+    [MinLength(8)] string? NewPassword
 );
 
 public record UserDto(Guid Id, string Name, string Email, string Role);
@@ -33,5 +35,5 @@ public record ForgotPasswordRequest(
 
 public record ResetPasswordRequest(
     [Required] string Token, 
-    [Required, MinLength(6)] string NewPassword
+    [Required, MinLength(8)] string NewPassword
 );
