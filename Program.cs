@@ -11,24 +11,25 @@ using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
+
 // Database
 var dataSourceBuilder = new NpgsqlDataSourceBuilder(builder.Configuration.GetConnectionString("Default"));
-dataSourceBuilder.MapEnum<UserRole>("ai_study_hub.user_role");
 dataSourceBuilder.MapEnum<DocVisibility>("ai_study_hub.doc_visibility");
 dataSourceBuilder.MapEnum<CloudStatus>("ai_study_hub.cloud_status");
 dataSourceBuilder.MapEnum<ChatRole>("ai_study_hub.chat_role");
 dataSourceBuilder.MapEnum<PaymentStatus>("ai_study_hub.payment_status");
 dataSourceBuilder.MapEnum<PaymentMethod>("ai_study_hub.payment_method");
+dataSourceBuilder.MapEnum<PurchaseType>("ai_study_hub.purchase_type");
 var dataSource = dataSourceBuilder.Build();
 
 builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(dataSource, x =>
 {
-    x.MapEnum<UserRole>("ai_study_hub.user_role");
     x.MapEnum<DocVisibility>("ai_study_hub.doc_visibility");
     x.MapEnum<CloudStatus>("ai_study_hub.cloud_status");
     x.MapEnum<ChatRole>("ai_study_hub.chat_role");
     x.MapEnum<PaymentStatus>("ai_study_hub.payment_status");
     x.MapEnum<PaymentMethod>("ai_study_hub.payment_method");
+    x.MapEnum<PurchaseType>("ai_study_hub.purchase_type");
     x.MigrationsHistoryTable("__EFMigrationsHistory", "ai_study_hub");
 }));
 
@@ -64,11 +65,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 // Services
+builder.Services.AddMemoryCache();
 builder.Services.AddScoped<EmailService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<CloudinaryService>();
-builder.Services.AddScoped<ClaudeService>();
-builder.Services.AddHttpClient("Anthropic");
+builder.Services.AddScoped<GeminiService>();
+builder.Services.AddScoped<DocumentTextExtractor>();
+builder.Services.AddHttpClient("Gemini");
 
 // CORS — allow frontend dev server
 builder.Services.AddCors(o => o.AddPolicy("Frontend", p =>

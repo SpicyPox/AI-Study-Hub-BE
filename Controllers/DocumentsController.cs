@@ -11,7 +11,7 @@ namespace AIStudyHub.Api.Controllers;
 
 [ApiController]
 [Route("api/documents")]
-public class DocumentsController(AppDbContext db, CloudinaryService cloudinary) : ControllerBase
+public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, DocumentTextExtractor extractor, GeminiService gemini) : ControllerBase
 {
     [Authorize]
     [HttpGet]
@@ -164,6 +164,25 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary) 
             return BadRequest("File khong ton tai tren cloud.");
 
         return Ok(new { Url = doc.CloudFile.CloudUrl });
+    }
+
+    [Authorize]
+    [HttpPost("{id:guid}/summarize")]
+    public async Task<IActionResult> Summarize(Guid id, CancellationToken ct)
+    {
+        var doc = await db.Documents
+            .Include(d => d.CloudFile)
+            .FirstOrDefaultAsync(d => d.Id == id && (d.Visibility == DocVisibility.@public || d.UserId == UserId()), ct)
+            ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
+
+        var text = await extractor.ExtractTextAsync(doc, ct);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return BadRequest("Không thể trích xuất nội dung văn bản từ tài liệu này để tóm tắt.");
+        }
+
+        var summary = await gemini.GenerateSummaryAsync(text, ct);
+        return Ok(new { summary });
     }
 
     private Guid UserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);

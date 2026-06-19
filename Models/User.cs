@@ -22,7 +22,9 @@ public partial class User
     /// </summary>
     public string PasswordHash { get; set; } = null!;
 
-    public UserRole Role { get; set; } = UserRole.user;
+    public Guid? RoleId { get; set; }
+
+    public virtual Role? Role { get; set; }
 
     public DateTime CreatedAt { get; set; }
 
@@ -39,6 +41,10 @@ public partial class User
     public virtual ICollection<PasswordResetToken> PasswordResetTokens { get; set; } = new List<PasswordResetToken>();
 
     public virtual ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
+
+    public virtual ICollection<Favorite> Favorites { get; set; } = new List<Favorite>();
+
+    public virtual ICollection<UserSubscription> UserSubscriptions { get; set; } = new List<UserSubscription>();
 
     public virtual UserStorage? UserStorage { get; set; }
 }

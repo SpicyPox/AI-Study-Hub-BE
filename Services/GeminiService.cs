@@ -1,0 +1,225 @@
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
+using AIStudyHub.Api.Models;
+
+namespace AIStudyHub.Api.Services;
+
+public class GeminiService(IConfiguration config, IHttpClientFactory httpFactory)
+{
+    private static readonly JsonSerializerOptions _json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
+    private bool IsStub => string.IsNullOrEmpty(config["Gemini:ApiKey"]) ||
+                           config["Gemini:ApiKey"] == "YOUR_GEMINI_API_KEY_HERE";
+
+    private record GeminiPart(string Text);
+    private record GeminiContent(string Role, List<GeminiPart> Parts);
+
+    public async Task<string> StreamAsync(
+        string userMessage,
+        IEnumerable<ChatMessage> history,
+        string? documentContext,
+        HttpResponse response,
+        CancellationToken ct)
+    {
+        response.Headers.Append("Content-Type", "text/event-stream");
+        response.Headers.Append("Cache-Control", "no-cache");
+        response.Headers.Append("X-Accel-Buffering", "no");
+
+        if (IsStub)
+        {
+            return await StreamStubAsync(userMessage, response, ct);
+        }
+
+        return await StreamGeminiAsync(userMessage, history, documentContext, response, ct);
+    }
+
+    private static async Task<string> StreamStubAsync(string userMessage, HttpResponse response, CancellationToken ct)
+    {
+        var reply = $"[Stub] Câu trả lời cho: \"{userMessage}\"\n\nĐây là phản hồi demo của Gemini. Hãy thêm Gemini API key vào appsettings.json để bật Gemini AI thật.";
+        foreach (var word in reply.Split(' '))
+        {
+            var chunk = JsonSerializer.Serialize(new { content = word + " " });
+            await response.WriteAsync($"data: {chunk}\n\n", ct);
+            await response.Body.FlushAsync(ct);
+            await Task.Delay(30, ct);
+        }
+        await response.WriteAsync("data: [DONE]\n\n", ct);
+        return reply;
+    }
+
+    private async Task<string> StreamGeminiAsync(
+        string userMessage,
+        IEnumerable<ChatMessage> history,
+        string? documentContext,
+        HttpResponse response,
+        CancellationToken ct)
+    {
+        var systemPrompt = documentContext is not null
+            ? $"Bạn là trợ lý học tập AI. Hãy trả lời dựa trên nội dung tài liệu sau:\n\n{documentContext}\n\nTrả lời bằng tiếng Việt, súc tích và có trích dẫn trang nếu có."
+            : "Bạn là trợ lý học tập AI. Hãy trả lời ngắn gọn, chính xác bằng tiếng Việt.";
+
+        var rawContents = new List<GeminiContent>();
+        foreach (var msg in history)
+        {
+            var role = msg.Role == ChatRole.assistant ? "model" : "user";
+            rawContents.Add(new GeminiContent(role, new List<GeminiPart> { new GeminiPart(msg.Content) }));
+        }
+        rawContents.Add(new GeminiContent("user", new List<GeminiPart> { new GeminiPart(userMessage) }));
+
+        var sanitizedContents = SanitizeContents(rawContents);
+
+        var body = new
+        {
+            contents = sanitizedContents,
+            systemInstruction = new
+            {
+                parts = new[] { new GeminiPart(systemPrompt) }
+            },
+            generationConfig = new
+            {
+                maxOutputTokens = 1024
+            }
+        };
+
+        var http = httpFactory.CreateClient("Gemini");
+        var apiKey = config["Gemini:ApiKey"];
+        var request = new HttpRequestMessage(HttpMethod.Post, $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key={apiKey}")
+        {
+            Content = new StringContent(JsonSerializer.Serialize(body, _json), Encoding.UTF8, "application/json")
+        };
+
+        using var httpResponse = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        httpResponse.EnsureSuccessStatusCode();
+
+        await using var stream = await httpResponse.Content.ReadAsStreamAsync(ct);
+        using var reader = new StreamReader(stream);
+
+        var fullReplyBuilder = new StringBuilder();
+        string? line;
+        while ((line = await reader.ReadLineAsync(ct)) != null && !ct.IsCancellationRequested)
+        {
+            if (!line.StartsWith("data: ")) continue;
+            var data = line[6..];
+
+            try
+            {
+                using var doc = JsonDocument.Parse(data);
+                if (doc.RootElement.TryGetProperty("candidates", out var candidates) && candidates.GetArrayLength() > 0)
+                {
+                    var firstCandidate = candidates[0];
+                    if (firstCandidate.TryGetProperty("content", out var content) &&
+                        content.TryGetProperty("parts", out var parts) &&
+                        parts.GetArrayLength() > 0)
+                    {
+                        var text = parts[0].GetProperty("text").GetString();
+                        if (!string.IsNullOrEmpty(text))
+                        {
+                            fullReplyBuilder.Append(text);
+                            var chunk = JsonSerializer.Serialize(new { content = text });
+                            await response.WriteAsync($"data: {chunk}\n\n", ct);
+                            await response.Body.FlushAsync(ct);
+                        }
+                    }
+                }
+            }
+            catch { /* skip malformed chunks */ }
+        }
+
+        await response.WriteAsync("data: [DONE]\n\n", ct);
+        return fullReplyBuilder.ToString();
+    }
+
+    public async Task<string> GenerateSummaryAsync(string documentContent, CancellationToken ct)
+    {
+        if (IsStub)
+        {
+            return "[Stub] Đây là bản tóm tắt của tài liệu. Hãy thêm Gemini API key vào appsettings.json để nhận tóm tắt từ Gemini AI thật.";
+        }
+
+        var systemPrompt = "Bạn là một chuyên gia tóm tắt tài liệu. Hãy tóm tắt tài liệu dưới đây bằng tiếng Việt, ngắn gọn, súc tích, làm nổi bật các ý chính bằng gạch đầu dòng.";
+        var body = new
+        {
+            contents = new[]
+            {
+                new GeminiContent("user", new List<GeminiPart> { new GeminiPart(documentContent) })
+            },
+            systemInstruction = new
+            {
+                parts = new[] { new GeminiPart(systemPrompt) }
+            },
+            generationConfig = new
+            {
+                maxOutputTokens = 1536
+            }
+        };
+
+        var http = httpFactory.CreateClient("Gemini");
+        var apiKey = config["Gemini:ApiKey"];
+        var request = new HttpRequestMessage(HttpMethod.Post, $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}")
+        {
+            Content = new StringContent(JsonSerializer.Serialize(body, _json), Encoding.UTF8, "application/json")
+        };
+
+        using var httpResponse = await http.SendAsync(request, ct);
+        httpResponse.EnsureSuccessStatusCode();
+
+        var jsonStr = await httpResponse.Content.ReadAsStringAsync(ct);
+        using var doc = JsonDocument.Parse(jsonStr);
+        if (doc.RootElement.TryGetProperty("candidates", out var candidates) && candidates.GetArrayLength() > 0)
+        {
+            var firstCandidate = candidates[0];
+            if (firstCandidate.TryGetProperty("content", out var content) &&
+                content.TryGetProperty("parts", out var parts) &&
+                parts.GetArrayLength() > 0)
+            {
+                var text = parts[0].GetProperty("text").GetString();
+                return text ?? string.Empty;
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static List<GeminiContent> SanitizeContents(List<GeminiContent> rawContents)
+    {
+        var sanitized = new List<GeminiContent>();
+        string? lastRole = null;
+        var mergedText = new StringBuilder();
+
+        foreach (var c in rawContents)
+        {
+            var text = c.Parts.FirstOrDefault()?.Text;
+            if (string.IsNullOrWhiteSpace(text)) continue;
+
+            var currentRole = c.Role.ToLower() == "model" ? "model" : "user";
+
+            if (lastRole == currentRole)
+            {
+                mergedText.AppendLine().Append(text);
+            }
+            else
+            {
+                if (lastRole != null)
+                {
+                    sanitized.Add(new GeminiContent(lastRole, new List<GeminiPart> { new GeminiPart(mergedText.ToString()) }));
+                }
+                lastRole = currentRole;
+                mergedText.Clear().Append(text);
+            }
+        }
+
+        if (lastRole != null)
+        {
+            sanitized.Add(new GeminiContent(lastRole, new List<GeminiPart> { new GeminiPart(mergedText.ToString()) }));
+        }
+
+        // Make sure it starts with "user"
+        while (sanitized.Count > 0 && sanitized[0].Role != "user")
+        {
+            sanitized.RemoveAt(0);
+        }
+
+        return sanitized;
+    }
+}

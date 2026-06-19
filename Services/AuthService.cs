@@ -17,20 +17,30 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
         if (await db.Users.AnyAsync(u => u.Email == req.Email))
             throw new InvalidOperationException("Email đã được sử dụng.");
 
+        var defaultRole = await db.Roles.FirstOrDefaultAsync(r => r.Name == "user");
         var user = new User
         {
             Username = req.Name,
             Email = req.Email.ToLower(),
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
+            RoleId = defaultRole?.Id
         };
         db.Users.Add(user);
         await db.SaveChangesAsync();
+        
+        if (user.Role == null && user.RoleId.HasValue)
+        {
+            user.Role = defaultRole;
+        }
+
         return await BuildAuthResponseAsync(user);
     }
 
     public async Task<AuthResponse> LoginAsync(LoginRequest req)
     {
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Email == req.Email.ToLower())
+        var user = await db.Users
+            .Include(u => u.Role)
+            .FirstOrDefaultAsync(u => u.Email == req.Email.ToLower())
             ?? throw new UnauthorizedAccessException("Email hoặc mật khẩu không đúng.");
 
         if (!BCrypt.Net.BCrypt.Verify(req.Password, user.PasswordHash))
@@ -41,7 +51,9 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
 
     public async Task<string> RefreshAsync(string refreshToken)
     {
-        var user = await db.Users.FirstOrDefaultAsync(u => u.RefreshToken == refreshToken && u.RefreshTokenExpiry > DateTime.UtcNow)
+        var user = await db.Users
+            .Include(u => u.Role)
+            .FirstOrDefaultAsync(u => u.RefreshToken == refreshToken && u.RefreshTokenExpiry > DateTime.UtcNow)
             ?? throw new UnauthorizedAccessException("Refresh token không hợp lệ hoặc đã hết hạn.");
 
         return GenerateAccessToken(user);
@@ -60,14 +72,18 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
 
     public async Task<UserDto> GetMeAsync(Guid userId)
     {
-        var user = await db.Users.FindAsync(userId)
+        var user = await db.Users
+            .Include(u => u.Role)
+            .FirstOrDefaultAsync(u => u.Id == userId)
             ?? throw new KeyNotFoundException("Người dùng không tồn tại.");
         return ToDto(user);
     }
 
     public async Task<UserDto> UpdateMeAsync(Guid userId, UpdateMeRequest req)
     {
-        var user = await db.Users.FindAsync(userId)
+        var user = await db.Users
+            .Include(u => u.Role)
+            .FirstOrDefaultAsync(u => u.Id == userId)
             ?? throw new KeyNotFoundException("Người dùng không tồn tại.");
 
         if (req.Name is not null) user.Username = req.Name;
@@ -86,6 +102,12 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
 
     private async Task<AuthResponse> BuildAuthResponseAsync(User user)
     {
+        // Ensure Role is loaded for generating access token
+        if (user.Role == null && user.RoleId.HasValue)
+        {
+            await db.Entry(user).Reference(u => u.Role).LoadAsync();
+        }
+
         var accessToken = GenerateAccessToken(user);
         var refreshToken = GenerateRefreshToken();
 
@@ -104,7 +126,7 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new Claim(ClaimTypes.Email, user.Email),
-            new Claim(ClaimTypes.Role, user.Role.ToString()),
+            new Claim(ClaimTypes.Role, user.Role?.Name ?? "user"),
         };
         var token = new JwtSecurityToken(
             issuer: config["Jwt:Issuer"],
@@ -169,5 +191,5 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
         await db.SaveChangesAsync();
     }
 
-    private static UserDto ToDto(User u) => new(u.Id, u.Username, u.Email, u.Role.ToString());
+    private static UserDto ToDto(User u) => new(u.Id, u.Username, u.Email, u.Role?.Name ?? "user");
 }

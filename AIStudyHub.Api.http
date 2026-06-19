@@ -1,6 +1,63 @@
-@AIStudyHub.Api_HostAddress = http://localhost:5143
+@HostAddress = https://localhost:7115
+@AuthToken = YOUR_JWT_ACCESS_TOKEN_HERE
 
-GET {{AIStudyHub.Api_HostAddress}}/weatherforecast/
-Accept: application/json
+### 1. Đăng ký tài khoản (Register)
+POST {{HostAddress}}/api/auth/register
+Content-Type: application/json
+
+{
+  "name": "Test User",
+  "email": "testuser@example.com",
+  "password": "Password123!"
+}
 
 ###
+
+### 2. Đăng nhập (Login) -> Lưu access token trả về để điền vào @AuthToken ở đầu file
+POST {{HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "testuser@example.com",
+  "password": "Password123!"
+}
+
+###
+
+### 3. Tạo cuộc hội thoại mới (Create Conversation)
+POST {{HostAddress}}/api/conversations
+Authorization: Bearer {{AuthToken}}
+Content-Type: application/json
+
+{
+  "title": "Cuộc trò chuyện mới"
+}
+
+###
+
+### 4. Gửi tin nhắn chatbot (Send Message - Stream SSE)
+# Lưu ý: Hãy thay thế giá trị GUID dưới đây bằng ID cuộc trò chuyện thực tế bạn nhận được ở bước 3
+@conversationId = 00000000-0000-0000-0000-000000000000
+
+POST {{HostAddress}}/api/conversations/{{conversationId}}/messages
+Authorization: Bearer {{AuthToken}}
+Content-Type: application/json
+
+{
+  "content": "Chào Claude, hãy giải thích khái niệm Web API trong .NET là gì?"
+}
+
+###
+
+### 5. Xem lịch sử chat (Get Chat History)
+GET {{HostAddress}}/api/conversations/{{conversationId}}/messages
+Authorization: Bearer {{AuthToken}}
+
+###
+
+### 6. Tóm tắt tài liệu (Summarize Document)
+# Lưu ý: Hãy thay thế giá trị GUID dưới đây bằng ID tài liệu thực tế trong DB của bạn
+@documentId = 00000000-0000-0000-0000-000000000000
+
+POST {{HostAddress}}/api/documents/{{documentId}}/summarize
+Authorization: Bearer {{AuthToken}}

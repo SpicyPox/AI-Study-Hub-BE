@@ -47,4 +47,6 @@ public partial class Document
     public virtual ICollection<ChatSession> Sessions { get; set; } = new List<ChatSession>();
 
     public virtual ICollection<Tag> Tags { get; set; } = new List<Tag>();
+
+    public virtual ICollection<Favorite> Favorites { get; set; } = new List<Favorite>();
 }
