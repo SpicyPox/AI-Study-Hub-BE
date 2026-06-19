@@ -3,11 +3,13 @@ using AIStudyHub.Api.DTOs.Auth;
 using AIStudyHub.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace AIStudyHub.Api.Controllers;
 
 [ApiController]
 [Route("api/auth")]
+[EnableRateLimiting("auth")]
 public class AuthController(AuthService authService) : ControllerBase
 {
     [HttpPost("register")]
@@ -21,8 +23,8 @@ public class AuthController(AuthService authService) : ControllerBase
     [HttpPost("refresh")]
     public async Task<IActionResult> Refresh(RefreshRequest req)
     {
-        var token = await authService.RefreshAsync(req.RefreshToken);
-        return Ok(new { accessToken = token });
+        var response = await authService.RefreshAsync(req.RefreshToken);
+        return Ok(response);
     }
 
     [Authorize]

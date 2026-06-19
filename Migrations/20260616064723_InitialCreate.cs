@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using AIStudyHub.Api.Models;
 using Microsoft.EntityFrameworkCore.Migrations;
 
