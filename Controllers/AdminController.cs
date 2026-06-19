@@ -24,7 +24,7 @@ public class AdminController(AppDbContext db) : ControllerBase
             .OrderByDescending(u => u.CreatedAt)
             .Skip((page - 1) * 20).Take(20)
             .Select(u => new AdminUserDto(
-                u.Id, u.Username, u.Email, u.Role.ToString(),
+                u.Id, u.Username, u.Email, u.Role != null ? u.Role.Name : "user",
                 "active",
                 u.Documents.Count, u.Documents.Sum(d => d.FileSize ?? 0),
                 0, // u.ChatSessions.SelectMany(c => c.ChatMessages).Sum(m => m.TokensUsed) - missing in DB
@@ -43,8 +43,11 @@ public class AdminController(AppDbContext db) : ControllerBase
         // DB no longer has IsActive
         if (req.Role is not null) 
         {
-            if (Enum.TryParse<AIStudyHub.Api.Models.UserRole>(req.Role, true, out var r))
-                user.Role = r;
+            var dbRole = await db.Roles.FirstOrDefaultAsync(r => r.Name.ToLower() == req.Role.ToLower());
+            if (dbRole != null)
+            {
+                user.RoleId = dbRole.Id;
+            }
         }
 
         await db.SaveChangesAsync();

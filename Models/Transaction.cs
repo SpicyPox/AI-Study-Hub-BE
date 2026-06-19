@@ -14,6 +14,10 @@ public partial class Transaction
 
     public Guid? PackageId { get; set; }
 
+    public Guid? SubscriptionPackageId { get; set; }
+
+    public PurchaseType PurchaseKind { get; set; } = PurchaseType.storage_package;
+
     public decimal Amount { get; set; }
 
     /// <summary>
@@ -32,6 +36,8 @@ public partial class Transaction
     public DateTime UpdatedAt { get; set; }
 
     public virtual StoragePackage? Package { get; set; }
+
+    public virtual SubscriptionPackage? SubscriptionPackage { get; set; }
 
     public virtual User User { get; set; } = null!;
 }

@@ -38,6 +38,14 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<UserStorage> UserStorages { get; set; }
 
+    public virtual DbSet<Role> Roles { get; set; }
+
+    public virtual DbSet<Favorite> Favorites { get; set; }
+
+    public virtual DbSet<SubscriptionPackage> SubscriptionPackages { get; set; }
+
+    public virtual DbSet<UserSubscription> UserSubscriptions { get; set; }
+
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -327,6 +335,8 @@ public partial class AppDbContext : DbContext
                 .HasDefaultValueSql("now()")
                 .HasColumnName("created_at");
             entity.Property(e => e.PackageId).HasColumnName("package_id");
+            entity.Property(e => e.SubscriptionPackageId).HasColumnName("subscription_package_id");
+            entity.Property(e => e.PurchaseKind).HasColumnName("purchase_kind");
             entity.Property(e => e.StorageAddedBytes)
                 .HasComment("Bí quyết linh hoạt: Khách mua gói 10GB hay nhập tay 3.5GB thì Backend chỉ việc quy ra Bytes ném vào đây. Hóa đơn completed là Trigger số 3 tự bốc số này cộng thẳng vào ví storage.")
                 .HasColumnName("storage_added_bytes");
@@ -342,6 +352,11 @@ public partial class AppDbContext : DbContext
                 .HasForeignKey(d => d.PackageId)
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("transactions_package_id_fkey");
+
+            entity.HasOne(d => d.SubscriptionPackage).WithMany(p => p.Transactions)
+                .HasForeignKey(d => d.SubscriptionPackageId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("transactions_subscription_package_id_fkey");
 
             entity.HasOne(d => d.User).WithMany(p => p.Transactions)
                 .HasForeignKey(d => d.UserId)
@@ -370,8 +385,13 @@ public partial class AppDbContext : DbContext
                 .HasMaxLength(255)
                 .HasComment("Nguyên tắc tử huyệt: Không bao giờ lưu mật khẩu gốc (plaintext). Cột này lưu chuỗi đã mã hóa một chiều (Bcrypt/Argon2).")
                 .HasColumnName("password_hash");
-            entity.Property(e => e.Role)
-                .HasColumnName("role");
+            entity.Property(e => e.RoleId)
+                .HasColumnName("role_id");
+
+            entity.HasOne(d => d.Role).WithMany(p => p.Users)
+                .HasForeignKey(d => d.RoleId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("users_role_id_fkey");
             entity.Property(e => e.UpdatedAt)
                 .HasDefaultValueSql("now()")
                 .HasColumnName("updated_at");
@@ -410,6 +430,74 @@ public partial class AppDbContext : DbContext
             entity.HasOne(d => d.User).WithOne(p => p.UserStorage)
                 .HasForeignKey<UserStorage>(d => d.UserId)
                 .HasConstraintName("user_storage_user_id_fkey");
+        });
+
+        modelBuilder.Entity<Role>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("roles_pkey");
+            entity.ToTable("roles", "ai_study_hub");
+            entity.HasIndex(e => e.Name, "roles_name_key").IsUnique();
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()").HasColumnName("id");
+            entity.Property(e => e.Name).HasMaxLength(50).HasColumnName("name");
+            entity.Property(e => e.Description).HasColumnName("description");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
+        });
+
+        modelBuilder.Entity<Favorite>(entity =>
+        {
+            entity.HasKey(e => new { e.UserId, e.DocumentId }).HasName("favorites_pkey");
+            entity.ToTable("favorites", "ai_study_hub");
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+            entity.Property(e => e.DocumentId).HasColumnName("document_id");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
+
+            entity.HasOne(d => d.User).WithMany(p => p.Favorites)
+                .HasForeignKey(d => d.UserId)
+                .HasConstraintName("favorites_user_id_fkey");
+
+            entity.HasOne(d => d.Document).WithMany(p => p.Favorites)
+                .HasForeignKey(d => d.DocumentId)
+                .HasConstraintName("favorites_document_id_fkey");
+        });
+
+        modelBuilder.Entity<SubscriptionPackage>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("subscription_packages_pkey");
+            entity.ToTable("subscription_packages", "ai_study_hub");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()").HasColumnName("id");
+            entity.Property(e => e.Name).HasMaxLength(100).HasColumnName("name");
+            entity.Property(e => e.Description).HasColumnName("description");
+            entity.Property(e => e.Price).HasPrecision(12, 2).HasColumnName("price");
+            entity.Property(e => e.DurationDays).HasColumnName("duration_days");
+            entity.Property(e => e.AiChatLimit).HasDefaultValue(100).HasColumnName("ai_chat_limit");
+            entity.Property(e => e.BaseStorageBytes).HasDefaultValue(536870912L).HasColumnName("base_storage_bytes");
+            entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()").HasColumnName("updated_at");
+        });
+
+        modelBuilder.Entity<UserSubscription>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("user_subscriptions_pkey");
+            entity.ToTable("user_subscriptions", "ai_study_hub");
+            entity.HasIndex(e => e.UserId, "idx_user_subscriptions_user");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()").HasColumnName("id");
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+            entity.Property(e => e.PackageId).HasColumnName("package_id");
+            entity.Property(e => e.StartDate).HasDefaultValueSql("now()").HasColumnName("start_date");
+            entity.Property(e => e.EndDate).HasColumnName("end_date");
+            entity.Property(e => e.Status).HasMaxLength(20).HasDefaultValue("active").HasColumnName("status");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()").HasColumnName("updated_at");
+
+            entity.HasOne(d => d.User).WithMany(p => p.UserSubscriptions)
+                .HasForeignKey(d => d.UserId)
+                .HasConstraintName("user_subscriptions_user_id_fkey");
+
+            entity.HasOne(d => d.Package).WithMany(p => p.UserSubscriptions)
+                .HasForeignKey(d => d.PackageId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("user_subscriptions_package_id_fkey");
         });
 
         OnModelCreatingPartial(modelBuilder);

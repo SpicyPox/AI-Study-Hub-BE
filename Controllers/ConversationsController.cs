@@ -12,7 +12,7 @@ namespace AIStudyHub.Api.Controllers;
 [ApiController]
 [Route("api/conversations")]
 [Authorize]
-public class ConversationsController(AppDbContext db, ClaudeService claude) : ControllerBase
+public class ConversationsController(AppDbContext db, GeminiService gemini, DocumentTextExtractor extractor) : ControllerBase
 {
     [HttpGet]
     public async Task<ConversationListResponse> GetAll()
@@ -73,8 +73,16 @@ public class ConversationsController(AppDbContext db, ClaudeService claude) : Co
     public async Task SendMessage(Guid id, [FromBody] SendMessageRequest req, CancellationToken ct)
     {
         var uid = UserId();
-        var conv = await db.ChatSessions.FirstOrDefaultAsync(c => c.Id == id && c.UserId == uid)
+        var conv = await db.ChatSessions.FirstOrDefaultAsync(c => c.Id == id && c.UserId == uid, ct)
             ?? throw new KeyNotFoundException("Cuộc trò chuyện không tồn tại.");
+
+        // Fetch history before saving current user message
+        var history = await db.ChatMessages
+            .Where(m => m.SessionId == id)
+            .OrderByDescending(m => m.CreatedAt)
+            .Take(20)
+            .OrderBy(m => m.CreatedAt)
+            .ToListAsync(ct);
 
         // Save user message
         var userMsg = new ChatMessage { Role = ChatRole.user, Content = req.Content, SessionId = id };
@@ -82,23 +90,52 @@ public class ConversationsController(AppDbContext db, ClaudeService claude) : Co
         conv.UpdatedAt = DateTime.UtcNow;
         if (conv.Title == "Cuộc trò chuyện mới" && req.Content.Length > 0)
             conv.Title = req.Content[..Math.Min(40, req.Content.Length)];
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
 
-        // Get document context if provided
-        string? docContext = null;
-        if (req.DocumentId.HasValue)
+        // Get document context if provided or linked to conversation
+        var docId = req.DocumentId;
+        if (!docId.HasValue)
         {
-            var doc = await db.Documents.FindAsync(req.DocumentId.Value);
-            if (doc is not null)
-                docContext = $"Tài liệu: {doc.Title}\nMô tả: {doc.Description ?? "Không có mô tả"}";
+            await db.Entry(conv).Collection(c => c.Documents).LoadAsync(ct);
+            docId = conv.Documents.Select(d => (Guid?)d.Id).FirstOrDefault();
         }
 
-        // Stream Claude response
-        await claude.StreamAsync(req.Content, docContext, Response, ct);
+        string? docContext = null;
+        if (docId.HasValue)
+        {
+            var doc = await db.Documents
+                .Include(d => d.CloudFile)
+                .FirstOrDefaultAsync(d => d.Id == docId.Value, ct);
+            if (doc is not null)
+            {
+                var extractedText = await extractor.ExtractTextAsync(doc, ct);
+                if (!string.IsNullOrWhiteSpace(extractedText))
+                {
+                    docContext = $"Tài liệu: {doc.Title}\nNội dung:\n{extractedText}";
+                }
+                else
+                {
+                    docContext = $"Tài liệu: {doc.Title}\nMô tả: {doc.Description ?? "Không có mô tả"}";
+                }
+            }
+        }
 
-        // Note: saving the assistant message would require capturing the full streamed response.
-        // For a production implementation, use a response capturing wrapper or have the client
-        // send a follow-up confirmation. Left as a TODO for the backend team.
+        // Stream Gemini response
+        var assistantReply = await gemini.StreamAsync(req.Content, history, docContext, Response, ct);
+
+        // Save assistant message
+        if (!string.IsNullOrWhiteSpace(assistantReply))
+        {
+            var assistantMsg = new ChatMessage
+            {
+                Role = ChatRole.assistant,
+                Content = assistantReply,
+                SessionId = id
+            };
+            db.ChatMessages.Add(assistantMsg);
+            conv.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+        }
     }
 
     private Guid UserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
