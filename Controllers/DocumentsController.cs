@@ -13,18 +13,29 @@ namespace AIStudyHub.Api.Controllers;
 [Route("api/documents")]
 public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, DocumentTextExtractor extractor, GeminiService gemini) : ControllerBase
 {
+    // Maximum allowed upload size per file (50 MB).
+    private const long MaxUploadBytes = 50L * 1024 * 1024;
+
     [Authorize]
     [HttpGet]
     public async Task<DocumentListResponse> GetAll(
         [FromQuery] Guid? subjectId,
         [FromQuery] string? type,
-        [FromQuery] string? q)
+        [FromQuery] string? q,
+        [FromQuery] string? scope)
     {
         var uid = UserId();
         var query = db.Documents
             .Include(d => d.Subject)
             .Include(d => d.User)
-            .Where(d => d.UserId == uid && !d.IsDeleted);
+            .Where(d => !d.IsDeleted);
+
+        // scope=public  -> browse public documents shared by everyone (the community hub).
+        // default (mine) -> only the current user's own documents.
+        if (string.Equals(scope, "public", StringComparison.OrdinalIgnoreCase))
+            query = query.Where(d => d.Visibility == DocVisibility.@public);
+        else
+            query = query.Where(d => d.UserId == uid);
 
         if (subjectId.HasValue) query = query.Where(d => d.SubjectId == subjectId);
         if (!string.IsNullOrEmpty(type)) query = query.Where(d => d.FileType == type);
@@ -50,11 +61,16 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
     [Authorize]
     [HttpPost("upload")]
     [Consumes("multipart/form-data")]
+    [RequestSizeLimit(MaxUploadBytes)]
+    [RequestFormLimits(MultipartBodyLengthLimit = MaxUploadBytes)]
     public async Task<ActionResult<DocumentDto>> Upload([FromForm] UploadDocumentRequest req)
     {
         var file = req.File;
         if (file is null || file.Length == 0)
             return BadRequest("File khong hop le.");
+
+        if (file.Length > MaxUploadBytes)
+            return BadRequest("File vuot qua gioi han 50 MB.");
 
         // Kiểm tra SubjectId có tồn tại không (tránh lỗi FK constraint)
         if (req.SubjectId.HasValue)
@@ -95,13 +111,6 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
     }
 
     [Authorize]
-    [HttpPost("upload-url")]
-    public IActionResult GetUploadUrl(GetUploadUrlRequest req)
-    {
-        return BadRequest("Upload URL khong con duoc ho tro. Vui long dung POST /api/documents/upload voi multipart/form-data.");
-    }
-
-    [Authorize]
     [HttpPost("{id:guid}/confirm")]
     public async Task<DocumentDto> Confirm(Guid id, ConfirmUploadRequest req)
     {
@@ -110,6 +119,9 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
             .Include(d => d.User)
             .FirstOrDefaultAsync(d => d.Id == id && d.UserId == UserId())
             ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
+
+        if (req.SubjectId.HasValue && !await db.Subjects.AnyAsync(s => s.Id == req.SubjectId.Value))
+            throw new InvalidOperationException($"SubjectId '{req.SubjectId}' không tồn tại.");
 
         doc.SubjectId = req.SubjectId;
         doc.Visibility = req.IsPublic ? DocVisibility.@public : DocVisibility.@private;
@@ -131,7 +143,13 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
             ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
 
         if (req.Name is not null) doc.Title = req.Name;
-        if (req.SubjectId.HasValue) doc.SubjectId = req.SubjectId;
+        
+        if (req.SubjectId.HasValue) 
+        {
+            if (!await db.Subjects.AnyAsync(s => s.Id == req.SubjectId.Value))
+                throw new InvalidOperationException($"SubjectId '{req.SubjectId}' không tồn tại.");
+            doc.SubjectId = req.SubjectId;
+        }
         if (req.IsPublic.HasValue) doc.Visibility = req.IsPublic.Value ? DocVisibility.@public : DocVisibility.@private;
         doc.UpdatedAt = DateTime.UtcNow;
 

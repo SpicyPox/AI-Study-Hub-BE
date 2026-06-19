@@ -14,14 +14,18 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
 {
     public async Task<AuthResponse> RegisterAsync(RegisterRequest req)
     {
-        if (await db.Users.AnyAsync(u => u.Email == req.Email))
+        var lowerEmail = req.Email.ToLower();
+        if (await db.Users.AnyAsync(u => u.Email == lowerEmail))
             throw new InvalidOperationException("Email đã được sử dụng.");
+
+        if (await db.Users.AnyAsync(u => u.Username == req.Name))
+            throw new InvalidOperationException("Tên người dùng đã được sử dụng.");
 
         var defaultRole = await db.Roles.FirstOrDefaultAsync(r => r.Name == "user");
         var user = new User
         {
             Username = req.Name,
-            Email = req.Email.ToLower(),
+            Email = lowerEmail,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
             RoleId = defaultRole?.Id
         };
@@ -86,8 +90,23 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
             .FirstOrDefaultAsync(u => u.Id == userId)
             ?? throw new KeyNotFoundException("Người dùng không tồn tại.");
 
-        if (req.Name is not null) user.Username = req.Name;
-        if (req.Email is not null) user.Email = req.Email.ToLower();
+        if (req.Name is not null && req.Name != user.Username)
+        {
+            if (await db.Users.AnyAsync(u => u.Username == req.Name))
+                throw new InvalidOperationException("Tên người dùng đã được sử dụng.");
+            user.Username = req.Name;
+        }
+
+        if (req.Email is not null)
+        {
+            var lowerEmail = req.Email.ToLower();
+            if (lowerEmail != user.Email)
+            {
+                if (await db.Users.AnyAsync(u => u.Email == lowerEmail))
+                    throw new InvalidOperationException("Email đã được sử dụng.");
+                user.Email = lowerEmail;
+            }
+        }
 
         if (req.NewPassword is not null)
         {

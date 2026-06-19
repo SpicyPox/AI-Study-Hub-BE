@@ -13,14 +13,20 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AIStudyHub.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
+<<<<<<<< HEAD:Migrations/20260616064723_InitialCreate.Designer.cs
     [Migration("20260616064723_InitialCreate")]
     partial class InitialCreate
+========
+    [Migration("20260609083939_ss2")]
+    partial class ss2
+>>>>>>>> 2b30da468b0ce3d5fcacd77d0f36046382c3184a:Migrations/20260609083939_ss2.Designer.cs
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
+                .HasDefaultSchema("ai_study_hub")
                 .HasAnnotation("ProductVersion", "10.0.8")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
@@ -155,10 +161,7 @@ namespace AIStudyHub.Api.Migrations
                     b.HasIndex(new[] { "DocumentId" }, "cloud_files_document_id_key")
                         .IsUnique();
 
-                    b.ToTable("cloud_files", "ai_study_hub", t =>
-                        {
-                            t.HasComment("Lưu link S3/MinIO thực tế. Tách riêng bảng này để lỡ mai mốt chê AWS đắt, đổi sang Google Cloud thì chỉ sửa ở đây, không ảnh hưởng logic Documents.");
-                        });
+                    b.ToTable("cloud_files", "ai_study_hub");
                 });
 
             modelBuilder.Entity("AIStudyHub.Api.Models.Document", b =>
@@ -186,8 +189,7 @@ namespace AIStudyHub.Api.Migrations
 
                     b.Property<long?>("FileSize")
                         .HasColumnType("bigint")
-                        .HasColumnName("file_size")
-                        .HasComment("Bắt buộc dùng BIGINT để lưu số Bytes. Nếu dùng INT bình thường, file >2GB sẽ bị tràn bộ nhớ (overflow) gây sập hệ thống.");
+                        .HasColumnName("file_size");
 
                     b.Property<string>("FileType")
                         .HasMaxLength(20)
@@ -195,9 +197,10 @@ namespace AIStudyHub.Api.Migrations
                         .HasColumnName("file_type");
 
                     b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasColumnName("is_deleted")
-                        .HasComment("Cờ Xóa mềm (Soft Delete). Đổi thành TRUE thì file chui vào thùng rác, giữ lại được 30 ngày để khôi phục thay vì bốc hơi vĩnh viễn.");
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_deleted");
 
                     b.Property<Guid?>("SubjectId")
                         .HasColumnType("uuid")
@@ -219,9 +222,18 @@ namespace AIStudyHub.Api.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("user_id");
 
+<<<<<<<< HEAD:Migrations/20260616064723_InitialCreate.Designer.cs
                     b.Property<DocVisibility>("Visibility")
                         .HasColumnType("\"ai_study_hub.doc_visibility\"")
                         .HasColumnName("visibility");
+========
+                    b.Property<string>("Visibility")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("ai_study_hub.doc_visibility")
+                        .HasColumnName("visibility")
+                        .HasDefaultValueSql("'public'");
+>>>>>>>> 2b30da468b0ce3d5fcacd77d0f36046382c3184a:Migrations/20260609083939_ss2.Designer.cs
 
                     b.HasKey("Id")
                         .HasName("documents_pkey");
@@ -230,10 +242,7 @@ namespace AIStudyHub.Api.Migrations
 
                     b.HasIndex(new[] { "UserId" }, "idx_documents_user_id");
 
-                    b.ToTable("documents", "ai_study_hub", t =>
-                        {
-                            t.HasComment("Trái tim của hệ thống. Áp dụng cơ chế ON DELETE CASCADE từ bảng Users: Xóa user là tự động quét sạch tài liệu, không lo rác DB.");
-                        });
+                    b.ToTable("documents", "ai_study_hub");
                 });
 
             modelBuilder.Entity("AIStudyHub.Api.Models.Favorite", b =>
@@ -279,7 +288,9 @@ namespace AIStudyHub.Api.Migrations
                         .HasColumnName("expires_at");
 
                     b.Property<bool>("IsUsed")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
+                        .HasDefaultValue(false)
                         .HasColumnName("is_used");
 
                     b.Property<string>("Token")
@@ -300,10 +311,7 @@ namespace AIStudyHub.Api.Migrations
                     b.HasIndex(new[] { "Token" }, "password_reset_tokens_token_key")
                         .IsUnique();
 
-                    b.ToTable("password_reset_tokens", "ai_study_hub", t =>
-                        {
-                            t.HasComment("Quản lý token quên mật khẩu. Có cột expires_at (hạn dùng) và is_used (đã dùng) để vô hiệu hóa link cũ, chống hack.");
-                        });
+                    b.ToTable("password_reset_tokens", "ai_study_hub");
                 });
 
             modelBuilder.Entity("AIStudyHub.Api.Models.Role", b =>
@@ -553,8 +561,7 @@ namespace AIStudyHub.Api.Migrations
 
                     b.Property<long>("StorageAddedBytes")
                         .HasColumnType("bigint")
-                        .HasColumnName("storage_added_bytes")
-                        .HasComment("Bí quyết linh hoạt: Khách mua gói 10GB hay nhập tay 3.5GB thì Backend chỉ việc quy ra Bytes ném vào đây. Hóa đơn completed là Trigger số 3 tự bốc số này cộng thẳng vào ví storage.");
+                        .HasColumnName("storage_added_bytes");
 
                     b.Property<Guid?>("SubscriptionPackageId")
                         .HasColumnType("uuid")
@@ -584,10 +591,7 @@ namespace AIStudyHub.Api.Migrations
 
                     b.HasIndex(new[] { "UserId" }, "idx_transactions_user_id");
 
-                    b.ToTable("transactions", "ai_study_hub", t =>
-                        {
-                            t.HasComment("Lưu lịch sử nạp tiền. Chìa khóa của mô hình Mua bao nhiêu dùng bấy nhiêu.");
-                        });
+                    b.ToTable("transactions", "ai_study_hub");
                 });
 
             modelBuilder.Entity("AIStudyHub.Api.Models.User", b =>
@@ -608,15 +612,13 @@ namespace AIStudyHub.Api.Migrations
                         .IsRequired()
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)")
-                        .HasColumnName("email")
-                        .HasComment("Dùng VARCHAR(255) kết hợp UNIQUE INDEX LOWER() để ép hệ thống hiểu \"Email@gmail\" và \"email@gmail\" là một, chống tạo 2 tài khoản trùng lặp. Đã bỏ CITEXT để tránh lỗi phân quyền trên Cloud.");
+                        .HasColumnName("email");
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)")
-                        .HasColumnName("password_hash")
-                        .HasComment("Nguyên tắc tử huyệt: Không bao giờ lưu mật khẩu gốc (plaintext). Cột này lưu chuỗi đã mã hóa một chiều (Bcrypt/Argon2).");
+                        .HasColumnName("password_hash");
 
                     b.Property<string>("RefreshToken")
                         .HasMaxLength(255)
@@ -627,9 +629,18 @@ namespace AIStudyHub.Api.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("refresh_token_expiry");
 
+<<<<<<<< HEAD:Migrations/20260616064723_InitialCreate.Designer.cs
                     b.Property<Guid?>("RoleId")
                         .HasColumnType("uuid")
                         .HasColumnName("role_id");
+========
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("ai_study_hub.user_role")
+                        .HasColumnName("role")
+                        .HasDefaultValueSql("'user'");
+>>>>>>>> 2b30da468b0ce3d5fcacd77d0f36046382c3184a:Migrations/20260609083939_ss2.Designer.cs
 
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAdd()
@@ -646,15 +657,17 @@ namespace AIStudyHub.Api.Migrations
                     b.HasKey("Id")
                         .HasName("users_pkey");
 
+<<<<<<<< HEAD:Migrations/20260616064723_InitialCreate.Designer.cs
                     b.HasIndex("RoleId");
+========
+                    b.HasIndex(new[] { "Email" }, "idx_users_email_lower")
+                        .IsUnique();
+>>>>>>>> 2b30da468b0ce3d5fcacd77d0f36046382c3184a:Migrations/20260609083939_ss2.Designer.cs
 
                     b.HasIndex(new[] { "Username" }, "users_username_key")
                         .IsUnique();
 
-                    b.ToTable("users", "ai_study_hub", t =>
-                        {
-                            t.HasComment("Lưu thông tin cốt lõi. Dùng UUID thay vì ID (1,2,3) để bảo mật, chống đối thủ đoán số lượng user và dễ scale server.");
-                        });
+                    b.ToTable("users", "ai_study_hub");
                 });
 
             modelBuilder.Entity("AIStudyHub.Api.Models.UserStorage", b =>
@@ -667,8 +680,7 @@ namespace AIStudyHub.Api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bigint")
                         .HasDefaultValue(536870912L)
-                        .HasColumnName("total_capacity_bytes")
-                        .HasComment("Tổng dung lượng user có. Khi đăng ký, Trigger số 2 tự động tạo dòng này và nạp sẵn 500MB (536870912 Bytes) làm Free tier.");
+                        .HasColumnName("total_capacity_bytes");
 
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAdd()
@@ -677,17 +689,15 @@ namespace AIStudyHub.Api.Migrations
                         .HasDefaultValueSql("now()");
 
                     b.Property<long>("UsedBytes")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("bigint")
-                        .HasColumnName("used_bytes")
-                        .HasComment("Dung lượng đã xài. Khi user up file hoặc xóa file (kể cả xóa mềm), Trigger số 4 tự động lấy file_size cộng/trừ vào đây ngay lập tức.");
+                        .HasDefaultValue(0L)
+                        .HasColumnName("used_bytes");
 
                     b.HasKey("UserId")
                         .HasName("user_storage_pkey");
 
-                    b.ToTable("user_storage", "ai_study_hub", t =>
-                        {
-                            t.HasComment("Ví dung lượng. Lưu hoàn toàn bằng Bytes để không bị sai số làm tròn. Backend không cần tính toán gì vì Trigger cân hết.");
-                        });
+                    b.ToTable("user_storage", "ai_study_hub");
                 });
 
             modelBuilder.Entity("AIStudyHub.Api.Models.UserSubscription", b =>
@@ -761,10 +771,7 @@ namespace AIStudyHub.Api.Migrations
 
                     b.HasIndex("DocumentId");
 
-                    b.ToTable("chat_document_context", "ai_study_hub", t =>
-                        {
-                            t.HasComment("Bảng mấu chốt của AI RAG (Chat với tài liệu). Lưu liên kết giữa phiên chat và file PDF. Backend nhìn vào đây để lấy nội dung file kẹp vào Prompt gửi cho AI, giúp AI có \"phao cứu sinh\" trả lời chuẩn xác, không bịa đặt thông tin.");
-                        });
+                    b.ToTable("chat_document_context", "ai_study_hub");
                 });
 
             modelBuilder.Entity("DocumentTag", b =>

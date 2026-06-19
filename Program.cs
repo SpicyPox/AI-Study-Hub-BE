@@ -20,6 +20,7 @@ dataSourceBuilder.MapEnum<ChatRole>("ai_study_hub.chat_role");
 dataSourceBuilder.MapEnum<PaymentStatus>("ai_study_hub.payment_status");
 dataSourceBuilder.MapEnum<PaymentMethod>("ai_study_hub.payment_method");
 dataSourceBuilder.MapEnum<PurchaseType>("ai_study_hub.purchase_type");
+dataSourceBuilder.EnableUnmappedTypes();
 var dataSource = dataSourceBuilder.Build();
 
 builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(dataSource, x =>
@@ -33,7 +34,6 @@ builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(dataSource, x =>
     x.MigrationsHistoryTable("__EFMigrationsHistory", "ai_study_hub");
 }));
 
-// Auth
 var jwt = builder.Configuration.GetSection("Jwt");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(o =>
@@ -73,7 +73,6 @@ builder.Services.AddScoped<GeminiService>();
 builder.Services.AddScoped<DocumentTextExtractor>();
 builder.Services.AddHttpClient("Gemini");
 
-// CORS — allow frontend dev server
 builder.Services.AddCors(o => o.AddPolicy("Frontend", p =>
     p.WithOrigins(
         "http://localhost:5173",
@@ -94,7 +93,6 @@ builder.Services.AddSwaggerGen(o =>
         Version = "v1"
     });
 
-
     o.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.OpenApiSecurityScheme
     {
         Name = "Authorization",
@@ -105,12 +103,12 @@ builder.Services.AddSwaggerGen(o =>
         Description = "Nhập Access Token JWT vào đây. Không cần gõ chữ 'Bearer'."
     });
 
-
     o.OperationFilter<AIStudyHub.Api.Filters.AuthHeaderFilter>();
     o.DocumentFilter<AIStudyHub.Api.Filters.SecurityDocumentFilter>();
 });
 
 var app = builder.Build();
+
 
 
 app.UseMiddleware<ErrorHandlingMiddleware>();
@@ -125,6 +123,5 @@ if (app.Environment.IsDevelopment())
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
-
 
 app.Run();
