@@ -37,6 +37,7 @@ public partial class AppDbContext : DbContext
             .HasPostgresEnum<DocVisibility>("ai_study_hub", "doc_visibility")
             .HasPostgresEnum<PaymentMethod>("ai_study_hub", "payment_method")
             .HasPostgresEnum<PaymentStatus>("ai_study_hub", "payment_status")
+            .HasPostgresEnum<PurchaseType>("ai_study_hub", "purchase_type")
             .HasPostgresEnum<UserRole>("ai_study_hub", "user_role");
 
         modelBuilder.Entity<ChatMessage>(entity =>
@@ -44,7 +45,7 @@ public partial class AppDbContext : DbContext
             entity.HasKey(e => e.Id).HasName("chat_messages_pkey");
             entity.ToTable("chat_messages", "ai_study_hub");
             entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()").HasColumnName("id");
-            entity.Property(e => e.Role).HasColumnName("role").HasColumnType("ai_study_hub.chat_role");
+            entity.Property(e => e.Role).HasColumnName("role").HasMaxLength(50).HasConversion<string>();
             entity.Property(e => e.Content).HasColumnName("content");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
             entity.Property(e => e.SessionId).HasColumnName("session_id");
@@ -95,7 +96,7 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()").HasColumnName("id");
             entity.Property(e => e.CloudKey).HasMaxLength(300).HasColumnName("cloud_key");
             entity.Property(e => e.CloudUrl).HasMaxLength(500).HasColumnName("cloud_url");
-            entity.Property(e => e.Status).HasColumnName("status").HasColumnType("ai_study_hub.cloud_status");
+            entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(50).HasConversion<string>();
             entity.Property(e => e.DocumentId).HasColumnName("document_id");
             entity.Property(e => e.Provider).HasMaxLength(20).HasColumnName("provider");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()").HasColumnName("updated_at");
@@ -119,7 +120,7 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.FilePath).HasMaxLength(500).HasColumnName("file_path");
             entity.Property(e => e.FileSize).HasColumnName("file_size");
             entity.Property(e => e.FileType).HasMaxLength(20).HasColumnName("file_type");
-            entity.Property(e => e.Visibility).HasColumnName("visibility").HasColumnType("ai_study_hub.doc_visibility").HasDefaultValueSql("'public'");
+            entity.Property(e => e.Visibility).HasColumnName("visibility").HasMaxLength(50).HasConversion<string>().HasDefaultValue(DocVisibility.@public);
             entity.Property(e => e.IsDeleted).HasDefaultValue(false).HasColumnName("is_deleted");
             entity.Property(e => e.SubjectId).HasColumnName("subject_id");
             entity.Property(e => e.Title).HasMaxLength(255).HasColumnName("title");
@@ -218,12 +219,12 @@ public partial class AppDbContext : DbContext
 
             entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()").HasColumnName("id");
             entity.Property(e => e.Amount).HasPrecision(12, 2).HasColumnName("amount");
-            entity.Property(e => e.Method).HasColumnName("method").HasColumnType("ai_study_hub.payment_method");
-            entity.Property(e => e.Status).HasColumnName("status").HasColumnType("ai_study_hub.payment_status");
+            entity.Property(e => e.Method).HasColumnName("method").HasMaxLength(50).HasConversion<string>();
+            entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(50).HasConversion<string>();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
             entity.Property(e => e.PackageId).HasColumnName("package_id");
             entity.Property(e => e.SubscriptionPackageId).HasColumnName("subscription_package_id");
-            entity.Property(e => e.PurchaseKind).HasColumnName("purchase_kind");
+            entity.Property(e => e.PurchaseKind).HasColumnName("purchase_kind").HasMaxLength(50).HasConversion<string>();
             entity.Property(e => e.StorageAddedBytes)
                 .HasComment("Bí quyết linh hoạt: Khách mua gói 10GB hay nhập tay 3.5GB thì Backend chỉ việc quy ra Bytes ném vào đây. Hóa đơn completed là Trigger số 3 tự bốc số này cộng thẳng vào ví storage.")
                 .HasColumnName("storage_added_bytes");

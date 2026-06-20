@@ -1,5 +1,4 @@
 using System;
-using AIStudyHub.Api.Models;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -12,16 +11,20 @@ namespace AIStudyHub.Api.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            // Clean up existing schema and enums from previous failed migrations before recreating
+            migrationBuilder.Sql("DROP SCHEMA IF EXISTS ai_study_hub CASCADE;");
+
             migrationBuilder.EnsureSchema(
                 name: "ai_study_hub");
 
             migrationBuilder.AlterDatabase()
-                .Annotation("Npgsql:Enum:ai_study_hub.chat_role", "assistant,user")
-                .Annotation("Npgsql:Enum:ai_study_hub.cloud_status", "failed,pending,uploaded")
-                .Annotation("Npgsql:Enum:ai_study_hub.doc_visibility", "private,public")
-                .Annotation("Npgsql:Enum:ai_study_hub.payment_method", "bank_transfer,momo,stripe,vnpay")
-                .Annotation("Npgsql:Enum:ai_study_hub.payment_status", "completed,failed,pending,refunded")
-                .Annotation("Npgsql:Enum:ai_study_hub.purchase_type", "storage_package,subscription_package");
+                .Annotation("Npgsql:Enum:ai_study_hub.chat_role", "user,assistant")
+                .Annotation("Npgsql:Enum:ai_study_hub.cloud_status", "pending,uploaded,failed")
+                .Annotation("Npgsql:Enum:ai_study_hub.doc_visibility", "public,private")
+                .Annotation("Npgsql:Enum:ai_study_hub.payment_method", "vnpay,momo,stripe,bank_transfer")
+                .Annotation("Npgsql:Enum:ai_study_hub.payment_status", "pending,completed,failed,refunded")
+                .Annotation("Npgsql:Enum:ai_study_hub.purchase_type", "storage_package,subscription_package")
+                .Annotation("Npgsql:Enum:ai_study_hub.user_role", "user,admin");
 
             migrationBuilder.CreateTable(
                 name: "roles",
@@ -132,8 +135,7 @@ namespace AIStudyHub.Api.Migrations
                         principalTable: "roles",
                         principalColumn: "id",
                         onDelete: ReferentialAction.SetNull);
-                },
-                comment: "Lưu thông tin cốt lõi. Dùng UUID thay vì ID (1,2,3) để bảo mật, chống đối thủ đoán số lượng user và dễ scale server.");
+                });
 
             migrationBuilder.CreateTable(
                 name: "chat_sessions",
@@ -170,9 +172,9 @@ namespace AIStudyHub.Api.Migrations
                     description = table.Column<string>(type: "text", nullable: true),
                     file_path = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
                     file_type = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: true),
-                    file_size = table.Column<long>(type: "bigint", nullable: true, comment: "Bắt buộc dùng BIGINT để lưu số Bytes. Nếu dùng INT bình thường, file >2GB sẽ bị tràn bộ nhớ (overflow) gây sập hệ thống."),
-                    visibility = table.Column<DocVisibility>(type: "\"ai_study_hub.doc_visibility\"", nullable: false),
-                    is_deleted = table.Column<bool>(type: "boolean", nullable: false, comment: "Cờ Xóa mềm (Soft Delete). Đổi thành TRUE thì file chui vào thùng rác, giữ lại được 30 ngày để khôi phục thay vì bốc hơi vĩnh viễn."),
+                    file_size = table.Column<long>(type: "bigint", nullable: true),
+                    visibility = table.Column<int>(type: "ai_study_hub.doc_visibility", nullable: false, defaultValueSql: "'public'"),
+                    is_deleted = table.Column<bool>(type: "boolean", nullable: false, defaultValue: false),
                     created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()"),
                     updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()")
                 },
@@ -228,11 +230,11 @@ namespace AIStudyHub.Api.Migrations
                     user_id = table.Column<Guid>(type: "uuid", nullable: false),
                     package_id = table.Column<Guid>(type: "uuid", nullable: true),
                     subscription_package_id = table.Column<Guid>(type: "uuid", nullable: true),
-                    purchase_kind = table.Column<PurchaseType>(type: "\"ai_study_hub.purchase_type\"", nullable: false),
+                    purchase_kind = table.Column<int>(type: "ai_study_hub.purchase_type", nullable: false),
                     amount = table.Column<decimal>(type: "numeric(12,2)", precision: 12, scale: 2, nullable: false),
                     storage_added_bytes = table.Column<long>(type: "bigint", nullable: false, comment: "Bí quyết linh hoạt: Khách mua gói 10GB hay nhập tay 3.5GB thì Backend chỉ việc quy ra Bytes ném vào đây. Hóa đơn completed là Trigger số 3 tự bốc số này cộng thẳng vào ví storage."),
-                    status = table.Column<PaymentStatus>(type: "\"ai_study_hub.payment_status\"", nullable: false),
-                    method = table.Column<PaymentMethod>(type: "\"ai_study_hub.payment_method\"", nullable: false),
+                    status = table.Column<int>(type: "ai_study_hub.payment_status", nullable: false),
+                    method = table.Column<int>(type: "ai_study_hub.payment_method", nullable: false),
                     transaction_ref = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
                     created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()"),
                     updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()")
@@ -325,7 +327,7 @@ namespace AIStudyHub.Api.Migrations
                 {
                     id = table.Column<Guid>(type: "uuid", nullable: false, defaultValueSql: "gen_random_uuid()"),
                     session_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    role = table.Column<ChatRole>(type: "\"ai_study_hub.chat_role\"", nullable: false),
+                    role = table.Column<int>(type: "ai_study_hub.chat_role", nullable: false),
                     content = table.Column<string>(type: "text", nullable: false),
                     created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()")
                 },
@@ -378,7 +380,7 @@ namespace AIStudyHub.Api.Migrations
                     provider = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: true),
                     cloud_url = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
                     cloud_key = table.Column<string>(type: "character varying(300)", maxLength: 300, nullable: false),
-                    status = table.Column<CloudStatus>(type: "\"ai_study_hub.cloud_status\"", nullable: false),
+                    status = table.Column<int>(type: "ai_study_hub.cloud_status", nullable: false),
                     uploaded_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()"),
                     updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()")
                 },
@@ -561,6 +563,13 @@ namespace AIStudyHub.Api.Migrations
                 schema: "ai_study_hub",
                 table: "user_subscriptions",
                 column: "package_id");
+
+            migrationBuilder.CreateIndex(
+                name: "idx_users_email_lower",
+                schema: "ai_study_hub",
+                table: "users",
+                column: "email",
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_users_role_id",

@@ -203,6 +203,55 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
         return Ok(new { summary });
     }
 
+    [Authorize]
+    [HttpGet("{id:guid}/status")]
+    public async Task<IActionResult> GetUploadStatus(Guid id)
+    {
+        var doc = await db.Documents
+            .Include(d => d.CloudFile)
+            .FirstOrDefaultAsync(d => d.Id == id && d.UserId == UserId())
+            ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
+
+        var status = doc.CloudFile?.Status.ToString() ?? "no_file";
+        return Ok(new
+        {
+            documentId = doc.Id,
+            status,
+            cloudUrl = doc.CloudFile?.CloudUrl,
+            uploadedAt = doc.CloudFile?.UploadedAt
+        });
+    }
+
+    [Authorize]
+    [HttpGet("{id:guid}/preview")]
+    public async Task<IActionResult> Preview(Guid id)
+    {
+        var uid = UserIdOrNull();
+        var doc = await db.Documents
+            .Include(d => d.CloudFile)
+            .Include(d => d.Subject)
+            .Include(d => d.User)
+            .FirstOrDefaultAsync(d => d.Id == id && !d.IsDeleted && (d.Visibility == DocVisibility.@public || d.UserId == uid))
+            ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
+
+        if (doc.CloudFile == null || string.IsNullOrEmpty(doc.CloudFile.CloudUrl))
+            return BadRequest("File khong ton tai tren cloud.");
+
+        return Ok(new
+        {
+            documentId = doc.Id,
+            title = doc.Title,
+            fileType = doc.FileType,
+            fileSize = FormatSize(doc.FileSize ?? 0),
+            description = doc.Description,
+            previewUrl = doc.CloudFile.CloudUrl,
+            subjectName = doc.Subject?.Name,
+            ownerName = doc.User?.Username,
+            createdAt = doc.CreatedAt,
+            updatedAt = doc.UpdatedAt
+        });
+    }
+
     private Guid UserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
     private Guid? UserIdOrNull()

@@ -3,6 +3,7 @@ using System;
 using AIStudyHub.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AIStudyHub.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260620071952_InitialCreate")]
+    partial class InitialCreate
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -49,10 +52,8 @@ namespace AIStudyHub.Api.Migrations
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("now()");
 
-                    b.Property<string>("Role")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
+                    b.Property<int>("Role")
+                        .HasColumnType("ai_study_hub.chat_role")
                         .HasColumnName("role");
 
                     b.Property<Guid>("SessionId")
@@ -133,10 +134,8 @@ namespace AIStudyHub.Api.Migrations
                         .HasColumnType("character varying(20)")
                         .HasColumnName("provider");
 
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
+                    b.Property<int>("Status")
+                        .HasColumnType("ai_study_hub.cloud_status")
                         .HasColumnName("status");
 
                     b.Property<DateTime>("UpdatedAt")
@@ -218,13 +217,11 @@ namespace AIStudyHub.Api.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("user_id");
 
-                    b.Property<string>("Visibility")
-                        .IsRequired()
+                    b.Property<int>("Visibility")
                         .ValueGeneratedOnAdd()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasDefaultValue("public")
-                        .HasColumnName("visibility");
+                        .HasColumnType("ai_study_hub.doc_visibility")
+                        .HasColumnName("visibility")
+                        .HasDefaultValueSql("'public'");
 
                     b.HasKey("Id")
                         .HasName("documents_pkey");
@@ -534,26 +531,20 @@ namespace AIStudyHub.Api.Migrations
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("now()");
 
-                    b.Property<string>("Method")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
+                    b.Property<int>("Method")
+                        .HasColumnType("ai_study_hub.payment_method")
                         .HasColumnName("method");
 
                     b.Property<Guid?>("PackageId")
                         .HasColumnType("uuid")
                         .HasColumnName("package_id");
 
-                    b.Property<string>("PurchaseKind")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
+                    b.Property<int>("PurchaseKind")
+                        .HasColumnType("ai_study_hub.purchase_type")
                         .HasColumnName("purchase_kind");
 
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
+                    b.Property<int>("Status")
+                        .HasColumnType("ai_study_hub.payment_status")
                         .HasColumnName("status");
 
                     b.Property<long>("StorageAddedBytes")

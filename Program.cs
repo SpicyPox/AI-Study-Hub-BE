@@ -22,6 +22,7 @@ dataSourceBuilder.MapEnum<ChatRole>("ai_study_hub.chat_role");
 dataSourceBuilder.MapEnum<PaymentStatus>("ai_study_hub.payment_status");
 dataSourceBuilder.MapEnum<PaymentMethod>("ai_study_hub.payment_method");
 dataSourceBuilder.MapEnum<PurchaseType>("ai_study_hub.purchase_type");
+dataSourceBuilder.MapEnum<UserRole>("ai_study_hub.user_role");
 dataSourceBuilder.EnableUnmappedTypes();
 var dataSource = dataSourceBuilder.Build();
 
@@ -33,6 +34,7 @@ builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(dataSource, x =>
     x.MapEnum<PaymentStatus>("ai_study_hub.payment_status");
     x.MapEnum<PaymentMethod>("ai_study_hub.payment_method");
     x.MapEnum<PurchaseType>("ai_study_hub.purchase_type");
+    x.MapEnum<UserRole>("ai_study_hub.user_role");
     x.MigrationsHistoryTable("__EFMigrationsHistory", "ai_study_hub");
 }));
 
@@ -126,11 +128,51 @@ builder.Services.AddSwaggerGen(o =>
 
 var app = builder.Build();
 
+// Seed admin account
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+    // Ensure "admin" role exists
+    var adminRole = await db.Roles.FirstOrDefaultAsync(r => r.Name == "admin");
+    if (adminRole == null)
+    {
+        adminRole = new AIStudyHub.Api.Models.Role { Name = "admin", Description = "Quản trị viên toàn quyền hệ thống" };
+        db.Roles.Add(adminRole);
+        await db.SaveChangesAsync();
+    }
+
+    // Ensure "user" role exists
+    var userRole = await db.Roles.FirstOrDefaultAsync(r => r.Name == "user");
+    if (userRole == null)
+    {
+        userRole = new AIStudyHub.Api.Models.Role { Name = "user", Description = "Người dùng thông thường" };
+        db.Roles.Add(userRole);
+        await db.SaveChangesAsync();
+    }
+
+    // Seed admin user if not exists
+    var adminEmail = "admin@aistudyhub.com";
+    var adminExists = await db.Users.AnyAsync(u => u.Email == adminEmail);
+    if (!adminExists)
+    {
+        var adminUser = new AIStudyHub.Api.Models.User
+        {
+            Username = "admin",
+            Email = adminEmail,
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin@123456"),
+            RoleId = adminRole.Id
+        };
+        db.Users.Add(adminUser);
+        await db.SaveChangesAsync();
+        Console.WriteLine("✅ Admin account seeded: admin@aistudyhub.com / Admin@123456");
+    }
+}
 
 
 app.UseMiddleware<ErrorHandlingMiddleware>();
-app.UseCors("Frontend");
 app.UseRateLimiter();
+app.UseCors("Frontend");
 
 if (app.Environment.IsDevelopment())
 {
