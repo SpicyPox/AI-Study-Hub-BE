@@ -175,7 +175,10 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
     [HttpGet("{id:guid}/download")]
     public async Task<IActionResult> Download(Guid id)
     {
-        var doc = await db.Documents.Include(d => d.CloudFile).FirstOrDefaultAsync(d => d.Id == id && d.UserId == UserId())
+        var uid = UserIdOrNull();
+        var doc = await db.Documents.Include(d => d.CloudFile)
+            .FirstOrDefaultAsync(d => d.Id == id && !d.IsDeleted
+                && (d.Visibility == DocVisibility.@public || d.UserId == uid))
             ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
 
         if (doc.CloudFile == null || string.IsNullOrEmpty(doc.CloudFile.CloudUrl))
@@ -207,9 +210,11 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
     [HttpGet("{id:guid}/status")]
     public async Task<IActionResult> GetUploadStatus(Guid id)
     {
+        var uid = UserIdOrNull();
         var doc = await db.Documents
             .Include(d => d.CloudFile)
-            .FirstOrDefaultAsync(d => d.Id == id && d.UserId == UserId())
+            .FirstOrDefaultAsync(d => d.Id == id && !d.IsDeleted
+                && (d.Visibility == DocVisibility.@public || d.UserId == uid))
             ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
 
         var status = doc.CloudFile?.Status.ToString() ?? "no_file";

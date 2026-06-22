@@ -12,6 +12,7 @@ namespace AIStudyHub.Api.Controllers;
 public class AuthController(AuthService authService) : ControllerBase
 {
     [HttpPost("register")]
+    [EnableRateLimiting("auth")]
     public async Task<AuthResponse> Register(RegisterRequest req) =>
         await authService.RegisterAsync(req);
 
