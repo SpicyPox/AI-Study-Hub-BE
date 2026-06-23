@@ -8,25 +8,21 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
 
 // Database
 var dataSourceBuilder = new NpgsqlDataSourceBuilder(builder.Configuration.GetConnectionString("Default"));
-// doc_visibility, cloud_status, chat_role khong con duoc map nhu enum native Postgres
-// (xem AppDbContext.OnModelCreating).
-dataSourceBuilder.MapEnum<PaymentStatus>("ai_study_hub.payment_status");
-dataSourceBuilder.MapEnum<PaymentMethod>("ai_study_hub.payment_method");
-dataSourceBuilder.MapEnum<PurchaseType>("ai_study_hub.purchase_type");
+// doc_visibility, cloud_status, chat_role, payment_method, payment_status, purchase_type khong
+// con duoc map nhu enum native Postgres (xem AppDbContext.OnModelCreating).
 dataSourceBuilder.EnableUnmappedTypes();
 var dataSource = dataSourceBuilder.Build();
 
 builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(dataSource, x =>
 {
-    x.MapEnum<PaymentStatus>("ai_study_hub.payment_status");
-    x.MapEnum<PaymentMethod>("ai_study_hub.payment_method");
-    x.MapEnum<PurchaseType>("ai_study_hub.purchase_type");
     x.MigrationsHistoryTable("__EFMigrationsHistory", "ai_study_hub");
 }));
 
@@ -59,6 +55,21 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 builder.Services.AddAuthorization();
+
+// Rate Limiting - chong brute-force cho cac endpoint auth (login/register/forgot-password...)
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("auth", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? httpContext.Request.Headers.Host.ToString(),
+            factory: partition => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+});
 
 // Services
 builder.Services.AddMemoryCache();
@@ -105,20 +116,44 @@ builder.Services.AddSwaggerGen(o =>
 
 var app = builder.Build();
 
-// Seed bang roles ("user", "admin") neu chua co - bang da ton tai tu migration InitialCreate
-// nhung chua bao gio duoc chen du lieu, khien khong ai co the duoc gan role admin.
+// Seed role "user"/"admin" (bang da ton tai tu migration InitialCreate nhung chua bao gio duoc
+// chen du lieu, khien khong ai co the duoc gan role admin) + seed san 1 tai khoan admin mau de
+// dang nhap lan dau. DOI MAT KHAU NGAY sau khi dang nhap lan dau o moi truong thuc te.
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    foreach (var name in new[] { "user", "admin" })
+
+    var adminRole = await db.Roles.FirstOrDefaultAsync(r => r.Name == "admin");
+    if (adminRole == null)
     {
-        if (!await db.Roles.AnyAsync(r => r.Name == name))
-            db.Roles.Add(new Role { Id = Guid.NewGuid(), Name = name, CreatedAt = DateTime.UtcNow });
+        adminRole = new Role { Name = "admin", Description = "Quản trị viên toàn quyền hệ thống" };
+        db.Roles.Add(adminRole);
+        await db.SaveChangesAsync();
     }
-    await db.SaveChangesAsync();
+
+    if (!await db.Roles.AnyAsync(r => r.Name == "user"))
+    {
+        db.Roles.Add(new Role { Name = "user", Description = "Người dùng thông thường" });
+        await db.SaveChangesAsync();
+    }
+
+    var adminEmail = "admin@aistudyhub.com";
+    if (!await db.Users.AnyAsync(u => u.Email == adminEmail))
+    {
+        db.Users.Add(new User
+        {
+            Username = "admin",
+            Email = adminEmail,
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin@123456"),
+            RoleId = adminRole.Id
+        });
+        await db.SaveChangesAsync();
+        Console.WriteLine("Admin account seeded: admin@aistudyhub.com / Admin@123456");
+    }
 }
 
 app.UseMiddleware<ErrorHandlingMiddleware>();
+app.UseRateLimiter();
 app.UseCors("Frontend");
 
 if (app.Environment.IsDevelopment())

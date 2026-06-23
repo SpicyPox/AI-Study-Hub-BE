@@ -180,21 +180,41 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
         return Ok();
     }
 
+    // Khong [Authorize]: khach/chua dang nhap van tai duoc tai lieu public (R19).
     [HttpGet("{id:guid}/download")]
     public async Task<IActionResult> Download(Guid id)
     {
-        var uid = UserId();
+        var uid = UserIdOrNull();
         var doc = await db.Documents.Include(d => d.CloudFile)
-            .FirstOrDefaultAsync(d => d.Id == id)
+            .FirstOrDefaultAsync(d => d.Id == id && !d.IsDeleted
+                && (d.Visibility == DocVisibility.@public || d.UserId == uid))
             ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
-
-        if (doc.UserId != uid && doc.Visibility != DocVisibility.@public)
-            throw new KeyNotFoundException("Tai lieu khong ton tai.");
 
         if (doc.CloudFile == null || string.IsNullOrEmpty(doc.CloudFile.CloudUrl))
             return BadRequest("File khong ton tai tren cloud.");
 
         return Ok(new { Url = doc.CloudFile.CloudUrl });
+    }
+
+    [Authorize]
+    [HttpGet("{id:guid}/status")]
+    public async Task<IActionResult> GetUploadStatus(Guid id)
+    {
+        var uid = UserIdOrNull();
+        var doc = await db.Documents
+            .Include(d => d.CloudFile)
+            .FirstOrDefaultAsync(d => d.Id == id && !d.IsDeleted
+                && (d.Visibility == DocVisibility.@public || d.UserId == uid))
+            ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
+
+        var status = doc.CloudFile?.Status.ToString() ?? "no_file";
+        return Ok(new
+        {
+            documentId = doc.Id,
+            status,
+            cloudUrl = doc.CloudFile?.CloudUrl,
+            uploadedAt = doc.CloudFile?.UploadedAt
+        });
     }
 
     // File office (doc/docx/xls/xlsx/ppt/pptx) khong xem duoc truc tiep trong trinh duyet, nen
@@ -209,11 +229,9 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
     {
         var uid = UserIdOrNull();
         var doc = await db.Documents.Include(d => d.CloudFile)
-            .FirstOrDefaultAsync(d => d.Id == id)
+            .FirstOrDefaultAsync(d => d.Id == id && !d.IsDeleted
+                && (d.Visibility == DocVisibility.@public || d.UserId == uid))
             ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
-
-        if (doc.Visibility != DocVisibility.@public && doc.UserId != uid)
-            throw new KeyNotFoundException("Tai lieu khong ton tai.");
 
         if (doc.CloudFile == null || string.IsNullOrEmpty(doc.CloudFile.CloudUrl))
             return BadRequest("File khong ton tai tren cloud.");

@@ -44,23 +44,40 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
     {
         var user = await db.Users
             .Include(u => u.Role)
-            .FirstOrDefaultAsync(u => u.Email == req.Email.ToLower())
-            ?? throw new UnauthorizedAccessException("Email hoặc mật khẩu không đúng.");
+            .FirstOrDefaultAsync(u => u.Email == req.Email.ToLower());
 
-        if (!BCrypt.Net.BCrypt.Verify(req.Password, user.PasswordHash))
+        bool isValid = false;
+        if (user != null)
+        {
+            isValid = BCrypt.Net.BCrypt.Verify(req.Password, user.PasswordHash);
+        }
+        else
+        {
+            // Dummy verify to prevent timing attack / user enumeration
+            BCrypt.Net.BCrypt.Verify(req.Password, "$2a$12$L7m12W1X2Y3Z4A5B6C7D8E9F0G1H2I3J4K5L6M7N8O9P0Q1R2S3Tu");
+        }
+
+        if (user == null || !isValid)
             throw new UnauthorizedAccessException("Email hoặc mật khẩu không đúng.");
 
         return await BuildAuthResponseAsync(user);
     }
 
-    public async Task<string> RefreshAsync(string refreshToken)
+    public async Task<RefreshResponse> RefreshAsync(string refreshToken)
     {
         var user = await db.Users
             .Include(u => u.Role)
             .FirstOrDefaultAsync(u => u.RefreshToken == refreshToken && u.RefreshTokenExpiry > DateTime.UtcNow)
             ?? throw new UnauthorizedAccessException("Refresh token không hợp lệ hoặc đã hết hạn.");
 
-        return GenerateAccessToken(user);
+        var newAccessToken = GenerateAccessToken(user);
+        var newRefreshToken = GenerateRefreshToken();
+
+        user.RefreshToken = newRefreshToken;
+        user.RefreshTokenExpiry = DateTime.UtcNow.AddDays(7);
+        await db.SaveChangesAsync();
+
+        return new RefreshResponse(newAccessToken, newRefreshToken);
     }
 
     public async Task LogoutAsync(Guid userId)
@@ -161,8 +178,12 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
 
     public async Task ForgotPasswordAsync(ForgotPasswordRequest req)
     {
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Email == req.Email.ToLower())
-            ?? throw new KeyNotFoundException("Email không tồn tại trong hệ thống.");
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Email == req.Email.ToLower());
+        if (user == null)
+        {
+            // Return early to prevent user enumeration
+            return;
+        }
 
         var code = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
 

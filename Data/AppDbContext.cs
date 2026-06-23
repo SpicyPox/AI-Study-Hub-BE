@@ -31,11 +31,10 @@ public partial class AppDbContext : DbContext
     {
         modelBuilder.HasDefaultSchema("ai_study_hub");
 
-        // doc_visibility, cloud_status, chat_role: bo khoi danh sach Postgres enum native - cac cot
-        // tuong ung gio dung varchar + HasConversion<string> (xem cau hinh tung entity ben duoi).
+        // doc_visibility, cloud_status, chat_role, payment_method, payment_status, purchase_type:
+        // bo khoi danh sach Postgres enum native - cac cot tuong ung gio dung varchar +
+        // HasConversion<string> (xem cau hinh tung entity ben duoi).
         modelBuilder
-            .HasPostgresEnum<PaymentMethod>("ai_study_hub", "payment_method")
-            .HasPostgresEnum<PaymentStatus>("ai_study_hub", "payment_status")
             .HasPostgresEnum<UserRole>("ai_study_hub", "user_role");
 
         modelBuilder.Entity<ChatMessage>(entity =>
@@ -224,12 +223,14 @@ public partial class AppDbContext : DbContext
 
             entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()").HasColumnName("id");
             entity.Property(e => e.Amount).HasPrecision(12, 2).HasColumnName("amount");
-            entity.Property(e => e.Method).HasColumnName("method").HasColumnType("ai_study_hub.payment_method");
-            entity.Property(e => e.Status).HasColumnName("status").HasColumnType("ai_study_hub.payment_status");
+            // Doi sang varchar + HasConversion<string>: cung loi enum native Postgres nhu Document.Visibility,
+            // chuan bi san cho chuc nang Storage & Payment sau nay (chua co controller nao dung toi).
+            entity.Property(e => e.Method).HasColumnName("method").HasMaxLength(20).HasConversion<string>();
+            entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(20).HasConversion<string>();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
             entity.Property(e => e.PackageId).HasColumnName("package_id");
             entity.Property(e => e.SubscriptionPackageId).HasColumnName("subscription_package_id");
-            entity.Property(e => e.PurchaseKind).HasColumnName("purchase_kind");
+            entity.Property(e => e.PurchaseKind).HasColumnName("purchase_kind").HasMaxLength(20).HasConversion<string>();
             entity.Property(e => e.StorageAddedBytes)
                 .HasComment("Bí quyết linh hoạt: Khách mua gói 10GB hay nhập tay 3.5GB thì Backend chỉ việc quy ra Bytes ném vào đây. Hóa đơn completed là Trigger số 3 tự bốc số này cộng thẳng vào ví storage.")
                 .HasColumnName("storage_added_bytes");

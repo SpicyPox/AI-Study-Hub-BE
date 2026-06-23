@@ -29,15 +29,20 @@ public class ConversationsController(AppDbContext db, GeminiService gemini, Docu
     [HttpPost]
     public async Task<IActionResult> Create(CreateConversationRequest req)
     {
+        var uid = UserId();
         var conv = new ChatSession
         {
             Title = req.Title ?? "Cuộc trò chuyện mới",
-            UserId = UserId(),
+            UserId = uid,
         };
-        if (req.DocumentId.HasValue) 
+        if (req.DocumentId.HasValue)
         {
-            var doc = await db.Documents.FindAsync(req.DocumentId.Value);
-            if (doc != null) conv.Documents.Add(doc);
+            // Chi cho gan tai lieu public hoac cua chinh user dang goi API - tranh ro noi dung
+            // tai lieu private cua nguoi khac qua AI chat (xem cung check o SendMessage ben duoi).
+            var doc = await db.Documents.FirstOrDefaultAsync(d => d.Id == req.DocumentId.Value && !d.IsDeleted
+                && (d.Visibility == DocVisibility.@public || d.UserId == uid))
+                ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
+            conv.Documents.Add(doc);
         }
         db.ChatSessions.Add(conv);
         await db.SaveChangesAsync();
@@ -103,9 +108,12 @@ public class ConversationsController(AppDbContext db, GeminiService gemini, Docu
         string? docContext = null;
         if (docId.HasValue)
         {
+            // Chi doc noi dung tai lieu public hoac cua chinh user dang chat - tranh AI vo tinh
+            // lo noi dung tai lieu private cua nguoi khac (cung loai check voi Create() o tren).
             var doc = await db.Documents
                 .Include(d => d.CloudFile)
-                .FirstOrDefaultAsync(d => d.Id == docId.Value, ct);
+                .FirstOrDefaultAsync(d => d.Id == docId.Value && !d.IsDeleted
+                    && (d.Visibility == DocVisibility.@public || d.UserId == uid), ct);
             if (doc is not null)
             {
                 var extractedText = await extractor.ExtractTextAsync(doc, ct);
