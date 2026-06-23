@@ -11,3 +11,5 @@ public record AdminStatsDto(int TotalUsers, int TotalDocs, long TotalTokenUsage,
 public record TokenDailyDto(string Date, int Tokens);
 public record TokenStatsResponse(IEnumerable<TokenDailyDto> Daily, int TotalToday, int TotalAllTime);
 public record AdminUserListResponse(IEnumerable<AdminUserDto> Users, int Total);
+public record UpdateUserRoleRequest(string Role);
+public record HideDocumentRequest(bool Hide);

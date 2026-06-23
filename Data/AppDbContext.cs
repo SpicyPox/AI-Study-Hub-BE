@@ -31,10 +31,9 @@ public partial class AppDbContext : DbContext
     {
         modelBuilder.HasDefaultSchema("ai_study_hub");
 
+        // doc_visibility, cloud_status, chat_role: bo khoi danh sach Postgres enum native - cac cot
+        // tuong ung gio dung varchar + HasConversion<string> (xem cau hinh tung entity ben duoi).
         modelBuilder
-            .HasPostgresEnum<ChatRole>("ai_study_hub", "chat_role")
-            .HasPostgresEnum<CloudStatus>("ai_study_hub", "cloud_status")
-            .HasPostgresEnum<DocVisibility>("ai_study_hub", "doc_visibility")
             .HasPostgresEnum<PaymentMethod>("ai_study_hub", "payment_method")
             .HasPostgresEnum<PaymentStatus>("ai_study_hub", "payment_status")
             .HasPostgresEnum<UserRole>("ai_study_hub", "user_role");
@@ -44,7 +43,8 @@ public partial class AppDbContext : DbContext
             entity.HasKey(e => e.Id).HasName("chat_messages_pkey");
             entity.ToTable("chat_messages", "ai_study_hub");
             entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()").HasColumnName("id");
-            entity.Property(e => e.Role).HasColumnName("role").HasColumnType("ai_study_hub.chat_role");
+            // Doi sang varchar + HasConversion<string>: cung loi enum native Postgres nhu Document.Visibility.
+            entity.Property(e => e.Role).HasColumnName("role").HasMaxLength(20).HasConversion<string>();
             entity.Property(e => e.Content).HasColumnName("content");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
             entity.Property(e => e.SessionId).HasColumnName("session_id");
@@ -95,7 +95,9 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()").HasColumnName("id");
             entity.Property(e => e.CloudKey).HasMaxLength(300).HasColumnName("cloud_key");
             entity.Property(e => e.CloudUrl).HasMaxLength(500).HasColumnName("cloud_url");
-            entity.Property(e => e.Status).HasColumnName("status").HasColumnType("ai_study_hub.cloud_status");
+            // Doi sang varchar + HasConversion<string>: cung loi enum native Postgres nhu Document.Visibility.
+            entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(20)
+                .HasConversion<string>().HasDefaultValue(CloudStatus.pending);
             entity.Property(e => e.DocumentId).HasColumnName("document_id");
             entity.Property(e => e.Provider).HasMaxLength(20).HasColumnName("provider");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()").HasColumnName("updated_at");
@@ -119,7 +121,11 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.FilePath).HasMaxLength(500).HasColumnName("file_path");
             entity.Property(e => e.FileSize).HasColumnName("file_size");
             entity.Property(e => e.FileType).HasMaxLength(20).HasColumnName("file_type");
-            entity.Property(e => e.Visibility).HasColumnName("visibility").HasColumnType("ai_study_hub.doc_visibility").HasDefaultValueSql("'public'");
+            // Cot visibility doi tu enum native Postgres sang varchar: Npgsql/EF Core ban hien tai
+            // doc/viet sai kieu (int) cho cot enum native, gay loi 42883 khi query va loi doc du
+            // lieu khi insert. Dung varchar + HasConversion<string> de tranh hoan toan bug nay.
+            entity.Property(e => e.Visibility).HasColumnName("visibility").HasMaxLength(20)
+                .HasConversion<string>().HasDefaultValue(DocVisibility.@public);
             entity.Property(e => e.IsDeleted).HasDefaultValue(false).HasColumnName("is_deleted");
             entity.Property(e => e.SubjectId).HasColumnName("subject_id");
             entity.Property(e => e.Title).HasMaxLength(255).HasColumnName("title");

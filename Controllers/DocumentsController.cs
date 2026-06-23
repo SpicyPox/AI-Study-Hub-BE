@@ -25,6 +25,8 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
         [FromQuery] string? scope)
     {
         var uid = UserId();
+        var isPublicScope = string.Equals(scope, "public", StringComparison.OrdinalIgnoreCase);
+
         var query = db.Documents
             .Include(d => d.Subject)
             .Include(d => d.User)
@@ -32,9 +34,11 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
 
         // scope=public  -> browse public documents shared by everyone (the community hub).
         // default (mine) -> only the current user's own documents.
-        if (string.Equals(scope, "public", StringComparison.OrdinalIgnoreCase))
-            query = query.Where(d => d.Visibility == DocVisibility.@public);
-        else
+        // KHONG so sanh d.Visibility == DocVisibility.@public truc tiep trong SQL: EF Core +
+        // Npgsql hien tai gui sai kieu tham so cho cot enum native cua Postgres (gui int hoac text
+        // deu bi Postgres tu choi voi loi 42883 "operator does not exist"). De an toan, query het
+        // tap con can thiet roi loc Visibility o phia C# sau khi da ToListAsync().
+        if (!isPublicScope)
             query = query.Where(d => d.UserId == uid);
 
         if (subjectId.HasValue) query = query.Where(d => d.SubjectId == subjectId);
@@ -42,6 +46,8 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
         if (!string.IsNullOrEmpty(q)) query = query.Where(d => d.Title.ToLower().Contains(q.ToLower()));
 
         var docs = await query.OrderByDescending(d => d.UpdatedAt).ToListAsync();
+        if (isPublicScope) docs = docs.Where(d => d.Visibility == DocVisibility.@public).ToList();
+
         return new DocumentListResponse(docs.Select(ToDto), docs.Count);
     }
 
@@ -52,8 +58,11 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
         var doc = await db.Documents
             .Include(d => d.Subject)
             .Include(d => d.User)
-            .FirstOrDefaultAsync(d => d.Id == id && (d.Visibility == DocVisibility.@public || d.UserId == uid))
+            .FirstOrDefaultAsync(d => d.Id == id)
             ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
+
+        if (doc.Visibility != DocVisibility.@public && doc.UserId != uid)
+            throw new KeyNotFoundException("Tai lieu khong ton tai.");
 
         return ToDto(doc);
     }
@@ -171,12 +180,16 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
         return Ok();
     }
 
-    [Authorize]
     [HttpGet("{id:guid}/download")]
     public async Task<IActionResult> Download(Guid id)
     {
-        var doc = await db.Documents.Include(d => d.CloudFile).FirstOrDefaultAsync(d => d.Id == id && d.UserId == UserId())
+        var uid = UserId();
+        var doc = await db.Documents.Include(d => d.CloudFile)
+            .FirstOrDefaultAsync(d => d.Id == id)
             ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
+
+        if (doc.UserId != uid && doc.Visibility != DocVisibility.@public)
+            throw new KeyNotFoundException("Tai lieu khong ton tai.");
 
         if (doc.CloudFile == null || string.IsNullOrEmpty(doc.CloudFile.CloudUrl))
             return BadRequest("File khong ton tai tren cloud.");
@@ -184,14 +197,68 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
         return Ok(new { Url = doc.CloudFile.CloudUrl });
     }
 
+    // File office (doc/docx/xls/xlsx/ppt/pptx) khong xem duoc truc tiep trong trinh duyet, nen
+    // server dung Microsoft Office Online Viewer (dich vu mien phi cua Microsoft) de nhung qua
+    // iframe, tranh phai tu convert file phia backend. PDF/anh thi browser tu doc duoc, tra ve
+    // luon URL Cloudinary goc.
+    private static readonly HashSet<string> ImageTypes = new(StringComparer.OrdinalIgnoreCase) { "png", "jpg", "jpeg", "gif", "webp" };
+    private static readonly HashSet<string> OfficeTypes = new(StringComparer.OrdinalIgnoreCase) { "doc", "docx", "xls", "xlsx", "ppt", "pptx" };
+
+    [HttpGet("{id:guid}/preview")]
+    public async Task<IActionResult> Preview(Guid id)
+    {
+        var uid = UserIdOrNull();
+        var doc = await db.Documents.Include(d => d.CloudFile)
+            .FirstOrDefaultAsync(d => d.Id == id)
+            ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
+
+        if (doc.Visibility != DocVisibility.@public && doc.UserId != uid)
+            throw new KeyNotFoundException("Tai lieu khong ton tai.");
+
+        if (doc.CloudFile == null || string.IsNullOrEmpty(doc.CloudFile.CloudUrl))
+            return BadRequest("File khong ton tai tren cloud.");
+
+        var fileUrl = doc.CloudFile.CloudUrl;
+        var ext = doc.FileType ?? "";
+
+        string mode;
+        string previewUrl;
+        if (ImageTypes.Contains(ext))
+        {
+            mode = "image";
+            previewUrl = fileUrl;
+        }
+        else if (string.Equals(ext, "pdf", StringComparison.OrdinalIgnoreCase))
+        {
+            mode = "pdf";
+            previewUrl = fileUrl;
+        }
+        else if (OfficeTypes.Contains(ext))
+        {
+            mode = "office";
+            previewUrl = $"https://view.officeapps.live.com/op/view.aspx?src={Uri.EscapeDataString(fileUrl)}";
+        }
+        else
+        {
+            mode = "unsupported";
+            previewUrl = fileUrl;
+        }
+
+        return Ok(new { mode, url = previewUrl, fileUrl });
+    }
+
     [Authorize]
     [HttpPost("{id:guid}/summarize")]
     public async Task<IActionResult> Summarize(Guid id, CancellationToken ct)
     {
+        var uid = UserId();
         var doc = await db.Documents
             .Include(d => d.CloudFile)
-            .FirstOrDefaultAsync(d => d.Id == id && (d.Visibility == DocVisibility.@public || d.UserId == UserId()), ct)
+            .FirstOrDefaultAsync(d => d.Id == id, ct)
             ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
+
+        if (doc.Visibility != DocVisibility.@public && doc.UserId != uid)
+            throw new KeyNotFoundException("Tai lieu khong ton tai.");
 
         var text = await extractor.ExtractTextAsync(doc, ct);
         if (string.IsNullOrWhiteSpace(text))

@@ -14,9 +14,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Database
 var dataSourceBuilder = new NpgsqlDataSourceBuilder(builder.Configuration.GetConnectionString("Default"));
-dataSourceBuilder.MapEnum<DocVisibility>("ai_study_hub.doc_visibility");
-dataSourceBuilder.MapEnum<CloudStatus>("ai_study_hub.cloud_status");
-dataSourceBuilder.MapEnum<ChatRole>("ai_study_hub.chat_role");
+// doc_visibility, cloud_status, chat_role khong con duoc map nhu enum native Postgres
+// (xem AppDbContext.OnModelCreating).
 dataSourceBuilder.MapEnum<PaymentStatus>("ai_study_hub.payment_status");
 dataSourceBuilder.MapEnum<PaymentMethod>("ai_study_hub.payment_method");
 dataSourceBuilder.MapEnum<PurchaseType>("ai_study_hub.purchase_type");
@@ -25,9 +24,6 @@ var dataSource = dataSourceBuilder.Build();
 
 builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(dataSource, x =>
 {
-    x.MapEnum<DocVisibility>("ai_study_hub.doc_visibility");
-    x.MapEnum<CloudStatus>("ai_study_hub.cloud_status");
-    x.MapEnum<ChatRole>("ai_study_hub.chat_role");
     x.MapEnum<PaymentStatus>("ai_study_hub.payment_status");
     x.MapEnum<PaymentMethod>("ai_study_hub.payment_method");
     x.MapEnum<PurchaseType>("ai_study_hub.purchase_type");
@@ -109,7 +105,18 @@ builder.Services.AddSwaggerGen(o =>
 
 var app = builder.Build();
 
-
+// Seed bang roles ("user", "admin") neu chua co - bang da ton tai tu migration InitialCreate
+// nhung chua bao gio duoc chen du lieu, khien khong ai co the duoc gan role admin.
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    foreach (var name in new[] { "user", "admin" })
+    {
+        if (!await db.Roles.AnyAsync(r => r.Name == name))
+            db.Roles.Add(new Role { Id = Guid.NewGuid(), Name = name, CreatedAt = DateTime.UtcNow });
+    }
+    await db.SaveChangesAsync();
+}
 
 app.UseMiddleware<ErrorHandlingMiddleware>();
 app.UseCors("Frontend");

@@ -21,7 +21,7 @@ public class ConversationsController(AppDbContext db, GeminiService gemini, Docu
         var convs = await db.ChatSessions
             .Where(c => c.UserId == uid)
             .OrderByDescending(c => c.UpdatedAt)
-            .Select(c => new ConversationDto(c.Id, c.Title, c.Documents.Select(d => (Guid?)d.Id).FirstOrDefault(), c.UpdatedAt))
+            .Select(c => new ConversationDto(c.Id, c.Title ?? "", c.Documents.Select(d => (Guid?)d.Id).FirstOrDefault(), c.UpdatedAt))
             .ToListAsync();
         return new ConversationListResponse(convs);
     }
