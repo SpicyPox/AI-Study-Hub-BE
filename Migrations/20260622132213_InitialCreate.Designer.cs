@@ -3,6 +3,7 @@ using System;
 using AIStudyHub.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AIStudyHub.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260622132213_InitialCreate")]
+    partial class InitialCreate
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -21,6 +24,11 @@ namespace AIStudyHub.Api.Migrations
                 .HasAnnotation("ProductVersion", "10.0.8")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "ai_study_hub", "chat_role", new[] { "user", "assistant" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "ai_study_hub", "cloud_status", new[] { "pending", "uploaded", "failed" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "ai_study_hub", "doc_visibility", new[] { "public", "private" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "ai_study_hub", "payment_method", new[] { "vnpay", "momo", "stripe", "bank_transfer" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "ai_study_hub", "payment_status", new[] { "pending", "completed", "failed", "refunded" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "ai_study_hub", "user_role", new[] { "user", "admin" });
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
@@ -43,10 +51,8 @@ namespace AIStudyHub.Api.Migrations
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("now()");
 
-                    b.Property<string>("Role")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
+                    b.Property<int>("Role")
+                        .HasColumnType("ai_study_hub.chat_role")
                         .HasColumnName("role");
 
                     b.Property<Guid>("SessionId")
@@ -127,12 +133,8 @@ namespace AIStudyHub.Api.Migrations
                         .HasColumnType("character varying(20)")
                         .HasColumnName("provider");
 
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasDefaultValue("pending")
+                    b.Property<int>("Status")
+                        .HasColumnType("ai_study_hub.cloud_status")
                         .HasColumnName("status");
 
                     b.Property<DateTime>("UpdatedAt")
@@ -214,13 +216,11 @@ namespace AIStudyHub.Api.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("user_id");
 
-                    b.Property<string>("Visibility")
-                        .IsRequired()
+                    b.Property<int>("Visibility")
                         .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasDefaultValue("public")
-                        .HasColumnName("visibility");
+                        .HasColumnType("ai_study_hub.doc_visibility")
+                        .HasColumnName("visibility")
+                        .HasDefaultValueSql("'public'");
 
                     b.HasKey("Id")
                         .HasName("documents_pkey");
@@ -530,26 +530,20 @@ namespace AIStudyHub.Api.Migrations
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("now()");
 
-                    b.Property<string>("Method")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
+                    b.Property<int>("Method")
+                        .HasColumnType("ai_study_hub.payment_method")
                         .HasColumnName("method");
 
                     b.Property<Guid?>("PackageId")
                         .HasColumnType("uuid")
                         .HasColumnName("package_id");
 
-                    b.Property<string>("PurchaseKind")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
+                    b.Property<int>("PurchaseKind")
+                        .HasColumnType("integer")
                         .HasColumnName("purchase_kind");
 
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
+                    b.Property<int>("Status")
+                        .HasColumnType("ai_study_hub.payment_status")
                         .HasColumnName("status");
 
                     b.Property<long>("StorageAddedBytes")

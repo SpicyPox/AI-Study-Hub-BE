@@ -22,8 +22,10 @@ public class SecurityDocumentFilter : IDocumentFilter
         var bearerRef = new OpenApiSecuritySchemeReference("Bearer", swaggerDoc, null);
 
         // Apply to every operation that requires auth
+        if (swaggerDoc.Paths == null) return;
         foreach (var path in swaggerDoc.Paths.Values)
         {
+            if (path.Operations == null) continue;
             foreach (var operation in path.Operations.Values)
             {
                 if (operation.Extensions == null ||

@@ -9,14 +9,15 @@ namespace AIStudyHub.Api.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-[EnableRateLimiting("auth")]
 public class AuthController(AuthService authService) : ControllerBase
 {
     [HttpPost("register")]
+    [EnableRateLimiting("auth")]
     public async Task<AuthResponse> Register(RegisterRequest req) =>
         await authService.RegisterAsync(req);
 
     [HttpPost("login")]
+    [EnableRateLimiting("auth")]
     public async Task<AuthResponse> Login(LoginRequest req) =>
         await authService.LoginAsync(req);
 
@@ -45,10 +46,11 @@ public class AuthController(AuthService authService) : ControllerBase
         await authService.UpdateMeAsync(UserId(), req);
 
     [HttpPost("forgot-password")]
+    [EnableRateLimiting("auth")]
     public async Task<IActionResult> ForgotPassword(ForgotPasswordRequest req)
     {
         await authService.ForgotPasswordAsync(req);
-        return Ok(new { message = "Mã xác thực đã được gửi về email của bạn." });
+        return Ok(new { message = "Nếu email tồn tại trong hệ thống, mã xác thực đã được gửi." });
     }
 
     [HttpPost("reset-password")]
