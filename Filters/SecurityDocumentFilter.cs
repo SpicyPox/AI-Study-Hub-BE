@@ -25,6 +25,7 @@ public class SecurityDocumentFilter : IDocumentFilter
         if (swaggerDoc.Paths == null) return;
         foreach (var path in swaggerDoc.Paths.Values)
         {
+            if (path.Operations == null) continue;
             foreach (var operation in path.Operations.Values)
             {
                 if (operation.Extensions == null ||
