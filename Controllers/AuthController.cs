@@ -11,10 +11,20 @@ namespace AIStudyHub.Api.Controllers;
 [Route("api/auth")]
 public class AuthController(AuthService authService) : ControllerBase
 {
+    // Bước 1: gửi mã OTP về email. Chưa tạo tài khoản.
     [HttpPost("register")]
     [EnableRateLimiting("auth")]
-    public async Task<AuthResponse> Register(RegisterRequest req) =>
-        await authService.RegisterAsync(req);
+    public async Task<IActionResult> Register(RegisterRequest req)
+    {
+        await authService.RegisterSendOtpAsync(req);
+        return Ok(new { message = "Mã xác minh đã được gửi đến email của bạn." });
+    }
+
+    // Bước 2: xác minh OTP -> tạo tài khoản và trả token (đăng nhập luôn).
+    [HttpPost("register/verify")]
+    [EnableRateLimiting("auth")]
+    public async Task<AuthResponse> RegisterVerify(RegisterVerifyRequest req) =>
+        await authService.RegisterVerifyAsync(req);
 
     [HttpPost("login")]
     [EnableRateLimiting("auth")]
@@ -39,6 +49,10 @@ public class AuthController(AuthService authService) : ControllerBase
     [Authorize]
     [HttpGet("me")]
     public async Task<UserDto> GetMe() => await authService.GetMeAsync(UserId());
+
+    [Authorize]
+    [HttpGet("me/storage")]
+    public async Task<StorageDto> GetMyStorage() => await authService.GetStorageAsync(UserId());
 
     [Authorize]
     [HttpPatch("me")]
