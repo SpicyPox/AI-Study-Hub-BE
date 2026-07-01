@@ -317,7 +317,7 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
     {
         var storage = await db.UserStorages.FirstOrDefaultAsync(s => s.UserId == userId);
         long used  = storage?.UsedBytes ?? 0;
-        long total = storage?.TotalCapacityBytes ?? 536870912L; // 500 MB mặc định
+        long total = storage?.TotalCapacityBytes ?? 10485760L; // 10 MB mặc định
         return new StorageDto(used, total);
     }
 

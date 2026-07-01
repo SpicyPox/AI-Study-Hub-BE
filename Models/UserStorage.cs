@@ -11,7 +11,7 @@ public partial class UserStorage
     public Guid UserId { get; set; }
 
     /// <summary>
-    /// Tổng dung lượng user có. Khi đăng ký, Trigger số 2 tự động tạo dòng này và nạp sẵn 500MB (536870912 Bytes) làm Free tier.
+    /// Tổng dung lượng user có. Khi đăng ký, Trigger số 2 tự động tạo dòng này và nạp sẵn 10MB (10485760 Bytes) làm Free tier.
     /// </summary>
     public long TotalCapacityBytes { get; set; }
 

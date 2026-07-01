@@ -306,7 +306,7 @@ public partial class AppDbContext : DbContext
             entity.ToTable("user_storage", "ai_study_hub");
 
             entity.Property(e => e.UserId).ValueGeneratedNever().HasColumnName("user_id");
-            entity.Property(e => e.TotalCapacityBytes).HasDefaultValue(536870912L).HasColumnName("total_capacity_bytes");
+            entity.Property(e => e.TotalCapacityBytes).HasDefaultValue(10485760L).HasColumnName("total_capacity_bytes");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()").HasColumnName("updated_at");
             entity.Property(e => e.UsedBytes).HasDefaultValue(0L).HasColumnName("used_bytes");
 
