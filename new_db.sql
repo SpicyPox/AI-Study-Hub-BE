@@ -140,7 +140,7 @@ CREATE TABLE ai_study_hub.cloud_files (
 -- 10. user_storage
 CREATE TABLE ai_study_hub.user_storage (
     user_id              UUID        PRIMARY KEY REFERENCES ai_study_hub.users(id) ON DELETE CASCADE,
-    total_capacity_bytes BIGINT      NOT NULL DEFAULT 536870912,  -- 500 MB
+    total_capacity_bytes BIGINT      NOT NULL DEFAULT 10485760,  -- 10 MB
     used_bytes           BIGINT      NOT NULL DEFAULT 0,
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

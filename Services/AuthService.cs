@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -142,7 +143,32 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
         if (user == null || !isValid)
             throw new UnauthorizedAccessException("Email hoặc mật khẩu không đúng.");
 
-        return await BuildAuthResponseAsync(user);
+        var response = await BuildAuthResponseAsync(user);
+
+        // Gửi email thông báo đăng nhập (không block response)
+        _ = SendLoginNotificationAsync(user.Email, user.Username);
+
+        return response;
+    }
+
+    private async Task SendLoginNotificationAsync(string email, string username)
+    {
+        try
+        {
+            var time = DateTime.Now.ToString("HH:mm dd/MM/yyyy");
+            var subject = "[AI Study Hub] Thông báo đăng nhập tài khoản";
+            var body = $@"
+                <div style='font-family: Arial, sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 5px; max-width: 600px;'>
+                    <h2 style='color: #4A90E2;'>Thông báo đăng nhập</h2>
+                    <p>Xin chào <b>{username}</b>,</p>
+                    <p>Tài khoản của bạn vừa được đăng nhập vào lúc <b>{time}</b>.</p>
+                    <p>Nếu đây không phải bạn, hãy <b>đổi mật khẩu ngay</b> để bảo vệ tài khoản.</p>
+                    <br>
+                    <p>Trân trọng,<br>Đội ngũ AI Study Hub</p>
+                </div>";
+            await emailService.SendEmailAsync(email, subject, body);
+        }
+        catch { /* không block login nếu gửi mail lỗi */ }
     }
 
     public async Task<RefreshResponse> RefreshAsync(string refreshToken)
@@ -313,11 +339,173 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
         await db.SaveChangesAsync();
     }
 
+    // Cache key cho Google pending signup
+    private static string GooglePendingKey(string lowerEmail) => $"google-pending:{lowerEmail}";
+
+    private sealed class PendingGoogleSignup
+    {
+        public required string Name  { get; init; }
+        public required string Email { get; init; }
+        public required string Otp   { get; init; }
+        public int Attempts { get; set; }
+    }
+
+    // Trả về (lowerEmail, name) từ Google authorization code
+    private async Task<(string Email, string Name)> ExchangeGoogleCodeAsync(string code)
+    {
+        var clientId     = config["GoogleAuth:ClientId"]!;
+        var clientSecret = config["GoogleAuth:ClientSecret"]!;
+
+        using var http = new HttpClient();
+        var tokenRes = await http.PostAsync("https://oauth2.googleapis.com/token",
+            new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["code"]          = code,
+                ["client_id"]     = clientId,
+                ["client_secret"] = clientSecret,
+                ["redirect_uri"]  = "postmessage",
+                ["grant_type"]    = "authorization_code",
+            }));
+
+        if (!tokenRes.IsSuccessStatusCode)
+            throw new UnauthorizedAccessException("Không thể xác thực với Google.");
+
+        var tokenData = await tokenRes.Content.ReadFromJsonAsync<GoogleTokenResponse>()
+            ?? throw new UnauthorizedAccessException("Không đọc được token Google.");
+
+        var infoRes = await http.GetAsync($"https://oauth2.googleapis.com/tokeninfo?id_token={tokenData.IdToken}");
+        if (!infoRes.IsSuccessStatusCode)
+            throw new UnauthorizedAccessException("Google ID token không hợp lệ.");
+
+        var payload = await infoRes.Content.ReadFromJsonAsync<GoogleTokenPayload>()
+            ?? throw new UnauthorizedAccessException("Không đọc được thông tin Google.");
+
+        if (payload.Aud != clientId)
+            throw new UnauthorizedAccessException("Google token không hợp lệ.");
+
+        return (payload.Email.ToLower(), payload.Name);
+    }
+
+    /// <summary>
+    /// Trả về GoogleAuthResponse:
+    ///   - status "otp_required" nếu email chưa có tài khoản → gửi OTP
+    ///   - status "ok" nếu tài khoản đã tồn tại → đăng nhập + gửi mail thông báo
+    /// </summary>
+    public async Task<GoogleAuthResponse> LoginWithGoogleAsync(GoogleLoginRequest req)
+    {
+        var (lowerEmail, name) = await ExchangeGoogleCodeAsync(req.Credential);
+
+        var user = await db.Users.Include(u => u.Role).FirstOrDefaultAsync(u => u.Email == lowerEmail);
+
+        if (user == null)
+        {
+            // Tài khoản mới → gửi OTP xác minh trước khi tạo
+            var otp = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
+            var displayName = string.IsNullOrWhiteSpace(name) ? lowerEmail.Split('@')[0] : name;
+
+            cache.Set(GooglePendingKey(lowerEmail), new PendingGoogleSignup
+            {
+                Name     = displayName,
+                Email    = lowerEmail,
+                Otp      = otp,
+                Attempts = 0
+            }, TimeSpan.FromMinutes(15));
+
+            var subject = "[AI Study Hub] Xác minh đăng ký bằng Google";
+            var body = $@"
+                <div style='font-family: Arial, sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 5px; max-width: 600px;'>
+                    <h2 style='color: #4A90E2;'>Xác minh tài khoản Google</h2>
+                    <p>Xin chào <b>{displayName}</b>,</p>
+                    <p>Bạn đang đăng ký tài khoản AI Study Hub bằng Google (<b>{lowerEmail}</b>).</p>
+                    <p>Mã xác minh của bạn (hiệu lực 15 phút):</p>
+                    <div style='background: #f4f4f4; padding: 15px; font-size: 24px; font-weight: bold; letter-spacing: 5px; text-align: center; border-radius: 4px; color: #333;'>
+                        {otp}
+                    </div>
+                    <p>Nếu bạn không thực hiện yêu cầu này, hãy bỏ qua email này.</p>
+                    <br><p>Trân trọng,<br>Đội ngũ AI Study Hub</p>
+                </div>";
+
+            await emailService.SendEmailAsync(lowerEmail, subject, body);
+
+            return new GoogleAuthResponse("otp_required", null, null, null);
+        }
+
+        // Tài khoản đã có → đăng nhập + gửi thông báo
+        var authResp = await BuildAuthResponseAsync(user);
+        _ = SendLoginNotificationAsync(user.Email, user.Username);
+
+        return new GoogleAuthResponse("ok", authResp.User, authResp.AccessToken, authResp.RefreshToken);
+    }
+
+    /// <summary>Xác minh OTP Google signup → tạo tài khoản + đăng nhập</summary>
+    public async Task<AuthResponse> GoogleVerifyAsync(GoogleVerifyRequest req)
+    {
+        var lowerEmail = req.Email.ToLower();
+        var key = GooglePendingKey(lowerEmail);
+
+        if (!cache.TryGetValue(key, out PendingGoogleSignup? pending) || pending is null)
+            throw new InvalidOperationException("Mã xác minh không hợp lệ hoặc đã hết hạn. Vui lòng thử lại.");
+
+        if (pending.Otp != req.Otp.Trim())
+        {
+            pending.Attempts++;
+            if (pending.Attempts >= MaxOtpAttempts)
+            {
+                cache.Remove(key);
+                throw new InvalidOperationException("Nhập sai quá nhiều lần. Vui lòng thử lại.");
+            }
+            throw new InvalidOperationException("Mã xác minh không đúng.");
+        }
+
+        cache.Remove(key);
+
+        if (await db.Users.AnyAsync(u => u.Email == lowerEmail))
+            throw new InvalidOperationException("Email đã được sử dụng.");
+
+        var displayName = pending.Name;
+        if (await db.Users.AnyAsync(u => u.Username == displayName))
+            displayName = $"{displayName}_{Guid.NewGuid().ToString()[..4]}";
+
+        var defaultRole = await db.Roles.FirstOrDefaultAsync(r => r.Name == "user");
+        var user = new User
+        {
+            Username     = displayName,
+            Email        = lowerEmail,
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString()),
+            RoleId       = defaultRole?.Id,
+            Role         = defaultRole
+        };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        return await BuildAuthResponseAsync(user);
+    }
+
+    private sealed class GoogleTokenResponse
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("id_token")]
+        public string IdToken { get; set; } = "";
+    }
+
+    private sealed class GoogleTokenPayload
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("aud")]
+        public string Aud { get; set; } = "";
+        [System.Text.Json.Serialization.JsonPropertyName("email")]
+        public string Email { get; set; } = "";
+        [System.Text.Json.Serialization.JsonPropertyName("name")]
+        public string Name { get; set; } = "";
+    }
+
     public async Task<StorageDto> GetStorageAsync(Guid userId)
     {
         var storage = await db.UserStorages.FirstOrDefaultAsync(s => s.UserId == userId);
         long used  = storage?.UsedBytes ?? 0;
-        long total = storage?.TotalCapacityBytes ?? 536870912L; // 500 MB mặc định
+<<<<<<< HEAD
+        long total = storage?.TotalCapacityBytes ?? 10485760L; // 10 MB mặc định (demo)
+=======
+        long total = storage?.TotalCapacityBytes ?? 10485760L; // 10 MB mặc định
+>>>>>>> 835bc4dc5e5d5a689bf8a69025ce29027161dff7
         return new StorageDto(used, total);
     }
 
