@@ -7,7 +7,8 @@ public record CloudinaryUploadResult(string PublicId, string SecureUrl);
 
 public class CloudinaryService
 {
-    private readonly Cloudinary _cloudinary;
+    private readonly Cloudinary? _cloudinary;
+    private readonly string? _configError;
 
     public CloudinaryService(IConfiguration config)
     {
@@ -20,15 +21,26 @@ public class CloudinaryService
             string.IsNullOrWhiteSpace(apiKey) ||
             string.IsNullOrWhiteSpace(apiSecret))
         {
-            throw new InvalidOperationException("Cloudinary configuration is missing CloudName, ApiKey, or ApiSecret.");
+            _configError = "Cloudinary configuration is missing CloudName, ApiKey, or ApiSecret.";
         }
+        else
+        {
+            var account = new Account(cloudName, apiKey, apiSecret);
+            _cloudinary = new Cloudinary(account);
+        }
+    }
 
-        var account = new Account(cloudName, apiKey, apiSecret);
-        _cloudinary = new Cloudinary(account);
+    private void EnsureConfigured()
+    {
+        if (_cloudinary == null)
+        {
+            throw new InvalidOperationException(_configError ?? "Cloudinary configuration is missing CloudName, ApiKey, or ApiSecret.");
+        }
     }
 
     public async Task<CloudinaryUploadResult> UploadDocumentAsync(IFormFile file, Guid userId)
     {
+        EnsureConfigured();
         var publicId = BuildPublicId(userId, file.FileName);
 
         await using var stream = file.OpenReadStream();
@@ -39,7 +51,7 @@ public class CloudinaryService
             Overwrite = false
         };
 
-        var result = await _cloudinary.UploadAsync(uploadParams);
+        var result = await _cloudinary!.UploadAsync(uploadParams);
         if (result.Error is not null)
             throw new InvalidOperationException($"Cloudinary upload failed: {result.Error.Message}");
 
@@ -49,13 +61,14 @@ public class CloudinaryService
     public async Task DeleteDocumentAsync(string publicId)
     {
         if (string.IsNullOrWhiteSpace(publicId)) return;
+        EnsureConfigured();
 
         var deleteParams = new DeletionParams(publicId)
         {
             ResourceType = ResourceType.Raw
         };
 
-        var result = await _cloudinary.DestroyAsync(deleteParams);
+        var result = await _cloudinary!.DestroyAsync(deleteParams);
         if (result.Error is not null)
             throw new InvalidOperationException($"Cloudinary delete failed: {result.Error.Message}");
     }
