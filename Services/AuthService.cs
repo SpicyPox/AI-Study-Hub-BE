@@ -203,6 +203,8 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
     {
         var user = await db.Users
             .Include(u => u.Role)
+            .Include(u => u.UserSubscriptions.Where(s => s.Status == "active"))
+                .ThenInclude(s => s.Package)
             .FirstOrDefaultAsync(u => u.Id == userId)
             ?? throw new KeyNotFoundException("Người dùng không tồn tại.");
         return ToDto(user);
@@ -212,6 +214,8 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
     {
         var user = await db.Users
             .Include(u => u.Role)
+            .Include(u => u.UserSubscriptions.Where(s => s.Status == "active"))
+                .ThenInclude(s => s.Package)
             .FirstOrDefaultAsync(u => u.Id == userId)
             ?? throw new KeyNotFoundException("Người dùng không tồn tại.");
 
@@ -251,6 +255,12 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
         {
             await db.Entry(user).Reference(u => u.Role).LoadAsync();
         }
+
+        // Load active subscriptions and their packages
+        await db.Entry(user).Collection(u => u.UserSubscriptions).Query()
+            .Where(s => s.Status == "active")
+            .Include(s => s.Package)
+            .LoadAsync();
 
         var accessToken = GenerateAccessToken(user);
         var refreshToken = GenerateRefreshToken();
@@ -505,5 +515,20 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
         return new StorageDto(used, total);
     }
 
-    private static UserDto ToDto(User u) => new(u.Id, u.Username, u.Email, u.Role?.Name ?? "user");
+    private static UserDto ToDto(User u)
+    {
+        var activeSub = u.UserSubscriptions?
+            .Where(s => s.Status == "active" && s.EndDate > DateTime.UtcNow)
+            .OrderByDescending(s => s.EndDate)
+            .FirstOrDefault();
+
+        return new UserDto(
+            u.Id,
+            u.Username,
+            u.Email,
+            u.Role?.Name ?? "user",
+            activeSub?.Package?.Name,
+            activeSub?.EndDate
+        );
+    }
 }

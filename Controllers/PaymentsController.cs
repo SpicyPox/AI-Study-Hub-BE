@@ -193,5 +193,28 @@ public class PaymentsController(
         return Ok(new { RspCode = "00", Message = "Confirm Success" });
     }
 
+    [Authorize]
+    [HttpGet("history")]
+    public async Task<IActionResult> GetTransactionHistory()
+    {
+        var userId = UserId();
+        var transactions = await db.Transactions
+            .Where(t => t.UserId == userId)
+            .OrderByDescending(t => t.CreatedAt)
+            .Select(t => new {
+                t.Id,
+                t.Amount,
+                t.Status,
+                t.Method,
+                t.PurchaseKind,
+                t.StorageAddedBytes,
+                t.TransactionRef,
+                t.CreatedAt
+            })
+            .ToListAsync();
+
+        return Ok(transactions);
+    }
+
     private Guid UserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 }
