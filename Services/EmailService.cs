@@ -2,14 +2,22 @@ using System;
 using System.Net;
 using System.Net.Mail;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using System.Threading.Tasks;
 
 namespace AIStudyHub.Api.Services;
 
-public class EmailService(IConfiguration config)
+public class EmailService(IConfiguration config, IHostEnvironment env)
 {
     public async Task SendEmailAsync(string toEmail, string subject, string body)
     {
+        if (env.IsEnvironment("Testing"))
+        {
+            // Simulate successful email sending in testing environment
+            Console.WriteLine($"[Email Test Stub] To: {toEmail}, Subject: {subject}");
+            return;
+        }
+
         var smtpSection = config.GetSection("Smtp");
         var host = smtpSection["Host"] ?? "smtp.gmail.com";
         var port = int.Parse(smtpSection["Port"] ?? "587");

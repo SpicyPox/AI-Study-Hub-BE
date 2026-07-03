@@ -15,16 +15,23 @@ var builder = WebApplication.CreateBuilder(args);
 
 
 // Database
-var dataSourceBuilder = new NpgsqlDataSourceBuilder(builder.Configuration.GetConnectionString("Default"));
-// doc_visibility, cloud_status, chat_role, payment_method, payment_status, purchase_type khong
-// con duoc map nhu enum native Postgres (xem AppDbContext.OnModelCreating).
-dataSourceBuilder.EnableUnmappedTypes();
-var dataSource = dataSourceBuilder.Build();
-
-builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(dataSource, x =>
+if (builder.Environment.IsEnvironment("Testing"))
 {
-    x.MigrationsHistoryTable("__EFMigrationsHistory", "ai_study_hub");
-}));
+    builder.Services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase("InMemoryDbForTesting"));
+}
+else
+{
+    var dataSourceBuilder = new NpgsqlDataSourceBuilder(builder.Configuration.GetConnectionString("Default"));
+    // doc_visibility, cloud_status, chat_role, payment_method, payment_status, purchase_type khong
+    // con duoc map nhu enum native Postgres (xem AppDbContext.OnModelCreating).
+    dataSourceBuilder.EnableUnmappedTypes();
+    var dataSource = dataSourceBuilder.Build();
+
+    builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(dataSource, x =>
+    {
+        x.MigrationsHistoryTable("__EFMigrationsHistory", "ai_study_hub");
+    }));
+}
 
 var jwt = builder.Configuration.GetSection("Jwt");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -60,15 +67,22 @@ builder.Services.AddAuthorization();
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.AddPolicy("auth", httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? httpContext.Request.Headers.Host.ToString(),
-            factory: partition => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 5,
-                Window = TimeSpan.FromMinutes(1),
-                QueueLimit = 0
-            }));
+    if (builder.Environment.IsEnvironment("Testing"))
+    {
+        options.AddPolicy("auth", httpContext => RateLimitPartition.GetNoLimiter(string.Empty));
+    }
+    else
+    {
+        options.AddPolicy("auth", httpContext =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? httpContext.Request.Headers.Host.ToString(),
+                factory: partition => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 5,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueLimit = 0
+                }));
+    }
 });
 
 // Services
@@ -78,6 +92,9 @@ builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<CloudinaryService>();
 builder.Services.AddScoped<GeminiService>();
 builder.Services.AddScoped<DocumentTextExtractor>();
+builder.Services.AddScoped<VnPayService>();
+builder.Services.AddScoped<MockPaymentService>();
+builder.Services.AddScoped<PaymentServiceFactory>();
 builder.Services.AddHttpClient("Gemini");
 
 builder.Services.AddCors(o => o.AddPolicy("Frontend", p =>

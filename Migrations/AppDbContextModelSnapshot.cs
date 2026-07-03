@@ -436,7 +436,7 @@ namespace AIStudyHub.Api.Migrations
                     b.Property<long>("BaseStorageBytes")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bigint")
-                        .HasDefaultValue(536870912L)
+                        .HasDefaultValue(10485760L)
                         .HasColumnName("base_storage_bytes");
 
                     b.Property<DateTime>("CreatedAt")
