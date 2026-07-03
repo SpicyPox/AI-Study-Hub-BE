@@ -15,6 +15,7 @@ obj/
 # Secrets — never commit these
 appsettings.Development.json
 appsettings.Production.json
+client_secret*.json
 
 # EF Core migrations snapshot is OK to commit, but ignore local override
 *.db

@@ -353,7 +353,7 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Price).HasPrecision(12, 2).HasColumnName("price");
             entity.Property(e => e.DurationDays).HasColumnName("duration_days");
             entity.Property(e => e.AiChatLimit).HasDefaultValue(100).HasColumnName("ai_chat_limit");
-            entity.Property(e => e.BaseStorageBytes).HasDefaultValue(536870912L).HasColumnName("base_storage_bytes");
+            entity.Property(e => e.BaseStorageBytes).HasDefaultValue(10485760L).HasColumnName("base_storage_bytes"); // 10 MB (demo)
             entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()").HasColumnName("updated_at");

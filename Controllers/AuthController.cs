@@ -59,6 +59,16 @@ public class AuthController(AuthService authService) : ControllerBase
     public async Task<UserDto> UpdateMe(UpdateMeRequest req) =>
         await authService.UpdateMeAsync(UserId(), req);
 
+    [HttpPost("google")]
+    [EnableRateLimiting("auth")]
+    public async Task<GoogleAuthResponse> LoginWithGoogle(GoogleLoginRequest req) =>
+        await authService.LoginWithGoogleAsync(req);
+
+    [HttpPost("google/verify")]
+    [EnableRateLimiting("auth")]
+    public async Task<AuthResponse> GoogleVerify(GoogleVerifyRequest req) =>
+        await authService.GoogleVerifyAsync(req);
+
     [HttpPost("forgot-password")]
     [EnableRateLimiting("auth")]
     public async Task<IActionResult> ForgotPassword(ForgotPasswordRequest req)
