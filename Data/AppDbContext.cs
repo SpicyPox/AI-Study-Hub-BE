@@ -27,6 +27,8 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<UserSubscription> UserSubscriptions { get; set; }
 
+    public virtual DbSet<UserSession> UserSessions { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema("ai_study_hub");
@@ -292,12 +294,41 @@ public partial class AppDbContext : DbContext
                 .HasMaxLength(50)
                 .HasColumnName("username");
 
-            entity.Property(e => e.RefreshToken)
-                .HasMaxLength(255)
-                .HasColumnName("refresh_token");
+            entity.Property(e => e.TwoFactorEnabled)
+                .HasDefaultValue(false)
+                .HasColumnName("two_factor_enabled");
 
-            entity.Property(e => e.RefreshTokenExpiry)
-                .HasColumnName("refresh_token_expiry");
+            entity.Property(e => e.TwoFactorSecret)
+                .HasMaxLength(255)
+                .HasColumnName("two_factor_secret");
+
+            entity.Property(e => e.TwoFactorPendingSecret)
+                .HasMaxLength(255)
+                .HasColumnName("two_factor_pending_secret");
+        });
+
+        modelBuilder.Entity<UserSession>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("user_sessions_pkey");
+            entity.ToTable("user_sessions", "ai_study_hub");
+            entity.HasIndex(e => e.UserId, "idx_user_sessions_user_id");
+            entity.HasIndex(e => e.RefreshTokenHash, "user_sessions_refresh_token_hash_key").IsUnique();
+
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()").HasColumnName("id");
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+            entity.Property(e => e.RefreshTokenHash).HasMaxLength(255).HasColumnName("refresh_token_hash");
+            entity.Property(e => e.DeviceName).HasMaxLength(255).HasColumnName("device_name");
+            entity.Property(e => e.UserAgent).HasMaxLength(500).HasColumnName("user_agent");
+            entity.Property(e => e.IpAddress).HasMaxLength(64).HasColumnName("ip_address");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
+            entity.Property(e => e.LastActiveAt).HasDefaultValueSql("now()").HasColumnName("last_active_at");
+            entity.Property(e => e.ExpiresAt).HasColumnName("expires_at");
+            entity.Property(e => e.RevokedAt).HasColumnName("revoked_at");
+
+            entity.HasOne(d => d.User).WithMany(p => p.Sessions)
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("user_sessions_user_id_fkey");
         });
 
         modelBuilder.Entity<UserStorage>(entity =>

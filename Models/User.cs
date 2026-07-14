@@ -30,9 +30,16 @@ public partial class User
 
     public DateTime UpdatedAt { get; set; }
 
-    public string? RefreshToken { get; set; }
+    /// <summary>Đã bật xác thực 2 bước (TOTP) hay chưa.</summary>
+    public bool TwoFactorEnabled { get; set; }
 
-    public DateTime? RefreshTokenExpiry { get; set; }
+    /// <summary>Secret TOTP (mã hoá AES trước khi lưu) một khi đã BẬT 2FA thành công.</summary>
+    public string? TwoFactorSecret { get; set; }
+
+    /// <summary>Secret tạm sinh ra khi người dùng bấm "Bật 2FA" nhưng chưa nhập mã xác nhận lần đầu.</summary>
+    public string? TwoFactorPendingSecret { get; set; }
+
+    public virtual ICollection<UserSession> Sessions { get; set; } = new List<UserSession>();
 
     public virtual ICollection<ChatSession> ChatSessions { get; set; } = new List<ChatSession>();
 

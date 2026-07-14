@@ -88,6 +88,7 @@ builder.Services.AddRateLimiter(options =>
 // Services
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<EmailService>();
+builder.Services.AddScoped<TotpService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<CloudinaryService>();
 builder.Services.AddScoped<GeminiService>();
@@ -166,6 +167,50 @@ using (var scope = app.Services.CreateScope())
         });
         await db.SaveChangesAsync();
         Console.WriteLine("Admin account seeded: admin@aistudyhub.com / Admin@123456");
+    }
+
+    if (!await db.SubscriptionPackages.AnyAsync())
+    {
+        db.SubscriptionPackages.AddRange(
+            new AIStudyHub.Api.Models.SubscriptionPackage
+            {
+                Name = "Sinh Viên",
+                Description = "Dành cho sinh viên: 5 GB lưu trữ, 200 tin nhắn AI/tháng",
+                Price = 29000,
+                DurationDays = 30,
+                AiChatLimit = 200,
+                BaseStorageBytes = 5368709120L,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            },
+            new AIStudyHub.Api.Models.SubscriptionPackage
+            {
+                Name = "Pro",
+                Description = "Dành cho học viên chuyên sâu: 20 GB, không giới hạn AI",
+                Price = 99000,
+                DurationDays = 30,
+                AiChatLimit = 9999,
+                BaseStorageBytes = 21474836480L,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            },
+            new AIStudyHub.Api.Models.SubscriptionPackage
+            {
+                Name = "Pro Năm",
+                Description = "Gói Pro tiết kiệm 12 tháng: 20 GB, không giới hạn AI",
+                Price = 899000,
+                DurationDays = 365,
+                AiChatLimit = 9999,
+                BaseStorageBytes = 21474836480L,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            }
+        );
+        await db.SaveChangesAsync();
+        Console.WriteLine("Subscription packages seeded.");
     }
 }
 
