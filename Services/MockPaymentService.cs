@@ -11,7 +11,7 @@ public class MockPaymentService(IConfiguration config) : IPaymentService
     {
         if (transaction.Method == PaymentMethod.bank_transfer)
         {
-            var amount = (long)Math.Round(transaction.Amount * 1.1m); // Add VAT 10% to match frontend calculation
+            var amount = (long)transaction.Amount;
             var addInfo = Uri.EscapeDataString($"AIStudyHub {transaction.Id.ToString()[..8].ToUpper()}");
             var paymentUrl = $"https://img.vietqr.io/image/TCB-19076609349015-compact2.png?amount={amount}&addInfo={addInfo}";
             return Task.FromResult(paymentUrl);
