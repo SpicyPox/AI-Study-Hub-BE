@@ -32,7 +32,15 @@ public record UpdateMeRequest(
     [MinLength(8)] string? NewPassword
 );
 
-public record UserDto(Guid Id, string Name, string Email, string Role, bool TwoFactorEnabled);
+public record UserDto(
+    Guid Id,
+    string Name,
+    string Email,
+    string Role,
+    bool TwoFactorEnabled,
+    string? ActiveSubscription = null,
+    DateTime? SubscriptionExpiry = null
+);
 public record AuthResponse(UserDto User, string AccessToken, string RefreshToken);
 
 // GET /auth/me/storage → dung lượng đã dùng / tổng dung lượng (bytes)

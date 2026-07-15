@@ -9,6 +9,10 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using PayOS;
+using PayOS.Models;
+using PayOS.Models.V2.PaymentRequests;
+using PayOS.Models.Webhooks;
 
 namespace AIStudyHub.Api.Controllers;
 
@@ -18,6 +22,7 @@ public class PaymentsController(
     AppDbContext db,
     PaymentServiceFactory paymentFactory,
     VnPayService vnPayService,
+    PayOSService payOSService,
     IConfiguration config) : ControllerBase
 {
     [Authorize]
@@ -33,7 +38,7 @@ public class PaymentsController(
             if (package == null || package.IsActive != true)
                 return BadRequest(new { message = "Gói dung lượng không tồn tại hoặc đã bị khóa." });
 
-            amount = package.Price;
+            amount = Math.Round(package.Price * 1.1m);
             storageAddedBytes = package.CapacityBytes;
         }
         else if (req.PurchaseKind == PurchaseType.subscription_package)
@@ -42,7 +47,7 @@ public class PaymentsController(
             if (package == null || package.IsActive != true)
                 return BadRequest(new { message = "Gói đăng ký không tồn tại hoặc đã bị khóa." });
 
-            amount = package.Price;
+            amount = Math.Round(package.Price * 1.1m);
             storageAddedBytes = package.BaseStorageBytes;
         }
         else
@@ -75,6 +80,7 @@ public class PaymentsController(
         var finalReturnUrl = req.ReturnUrl ?? config["VnPay:ReturnUrl"] ?? "http://localhost:5173/payment/callback";
 
         var paymentUrl = await paymentService.CreatePaymentUrlAsync(transaction, ipAddress, finalReturnUrl);
+        await db.SaveChangesAsync(); // Persist changes made to transaction (like TransactionRef/OrderCode)
 
         return Ok(new CheckoutResponse(paymentUrl, transaction.Id));
     }
@@ -191,6 +197,113 @@ public class PaymentsController(
         await db.SaveChangesAsync();
 
         return Ok(new { RspCode = "00", Message = "Confirm Success" });
+    }
+
+    [Authorize]
+    [HttpGet("history")]
+    public async Task<IActionResult> GetTransactionHistory()
+    {
+        var userId = UserId();
+        var transactions = await db.Transactions
+            .Where(t => t.UserId == userId)
+            .OrderByDescending(t => t.CreatedAt)
+            .Select(t => new {
+                t.Id,
+                t.Amount,
+                t.Status,
+                t.Method,
+                t.PurchaseKind,
+                t.StorageAddedBytes,
+                t.TransactionRef,
+                t.CreatedAt
+            })
+            .ToListAsync();
+
+        return Ok(transactions);
+    }
+
+    [HttpGet("payos/callback")]
+    public async Task<IActionResult> PayOSCallback([FromQuery] string returnUrl, [FromQuery] long orderCode, [FromQuery] string cancel, [FromQuery] string status)
+    {
+        try
+        {
+            var transaction = await db.Transactions.FirstOrDefaultAsync(t => t.TransactionRef == orderCode.ToString());
+            if (transaction == null)
+            {
+                return Redirect($"{returnUrl}?status=fail&error=TxnNotFound");
+            }
+
+            if (cancel == "true" || status == "CANCELLED")
+            {
+                if (transaction.Status == PaymentStatus.pending)
+                {
+                    transaction.Status = PaymentStatus.failed;
+                    transaction.UpdatedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                }
+                return Redirect($"{returnUrl}?status=fail&error=Cancelled");
+            }
+
+            var paymentInfo = await payOSService.GetClient().PaymentRequests.GetAsync(orderCode);
+            // BUG: PaymentLinkStatus.Paid.ToString() trả về "Paid" (PascalCase của SDK), không phải
+            // "PAID" -> so sánh chuỗi cũ luôn sai, khiến giao dịch thành công vẫn bị coi là thất bại
+            // ở đây (dù webhook riêng vẫn xử lý đúng, dẫn đến user thấy "thất bại" nhưng vẫn bị trừ
+            // tiền/lên gói). So sánh trực tiếp bằng enum để tránh phụ thuộc cách SDK format chuỗi.
+            if (paymentInfo.Status == PaymentLinkStatus.Paid)
+            {
+                if (transaction.Status == PaymentStatus.pending)
+                {
+                    // Giữ nguyên TransactionRef = orderCode (không ghi đè bằng paymentInfo.Id):
+                    // cả callback lẫn webhook đều tra transaction bằng TransactionRef, nếu đổi giá trị
+                    // này thì bên chạy sau (webhook hoặc callback, thứ tự không đảm bảo) sẽ không tìm
+                    // thấy giao dịch nữa -> có thể hiện "thất bại" cho một giao dịch thực ra đã thành công.
+                    transaction.Status = PaymentStatus.completed;
+                    transaction.UpdatedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                }
+                return Redirect($"{returnUrl}?status=success&txnId={transaction.Id}");
+            }
+            else
+            {
+                if (transaction.Status == PaymentStatus.pending)
+                {
+                    transaction.Status = PaymentStatus.failed;
+                    transaction.UpdatedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                }
+                return Redirect($"{returnUrl}?status=fail&error=PaymentFailed&code={paymentInfo.Status}");
+            }
+        }
+        catch (Exception ex)
+        {
+            return Redirect($"{returnUrl}?status=fail&error={Uri.EscapeDataString(ex.Message)}");
+        }
+    }
+
+    [HttpPost("payos/webhook")]
+    public async Task<IActionResult> PayOSWebhook([FromBody] Webhook webhookBody)
+    {
+        try
+        {
+            var verifiedData = await payOSService.GetClient().Webhooks.VerifyAsync(webhookBody);
+            
+            var transaction = await db.Transactions.FirstOrDefaultAsync(t => t.TransactionRef == verifiedData.OrderCode.ToString());
+            if (transaction != null)
+            {
+                if (transaction.Status == PaymentStatus.pending)
+                {
+                    // Không ghi đè TransactionRef — xem chú thích ở PayOSCallback.
+                    transaction.Status = PaymentStatus.completed;
+                    transaction.UpdatedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                }
+            }
+            return Ok(new { RspCode = "00", Message = "Success" });
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { Message = ex.Message });
+        }
     }
 
     private Guid UserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
