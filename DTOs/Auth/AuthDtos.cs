@@ -33,11 +33,12 @@ public record UpdateMeRequest(
 );
 
 public record UserDto(
-    Guid Id, 
-    string Name, 
-    string Email, 
-    string Role, 
-    string? ActiveSubscription = null, 
+    Guid Id,
+    string Name,
+    string Email,
+    string Role,
+    bool TwoFactorEnabled,
+    string? ActiveSubscription = null,
     DateTime? SubscriptionExpiry = null
 );
 public record AuthResponse(UserDto User, string AccessToken, string RefreshToken);
@@ -66,6 +67,43 @@ public record ForgotPasswordRequest(
 );
 
 public record ResetPasswordRequest(
-    [Required] string Token, 
+    [Required] string Token,
     [Required, MinLength(8)] string NewPassword
+);
+
+// Đăng nhập trả về "ok" (kèm token luôn) hoặc "2fa_required" (chờ nhập mã TOTP) - cùng quy ước
+// status với GoogleAuthResponse ở trên.
+public record LoginResponse(
+    string Status,
+    string? TwoFactorToken,
+    UserDto? User,
+    string? AccessToken,
+    string? RefreshToken
+);
+
+public record TwoFactorVerifyRequest(
+    [Required] string TwoFactorToken,
+    [Required] string Code
+);
+
+// Bước 1 bật 2FA: sinh secret tạm + link otpauth để hiển thị QR, chưa lưu là đã bật.
+public record TwoFactorSetupResponse(string Secret, string OtpAuthUri);
+
+// Bước 2 bật 2FA: xác nhận đã cấu hình đúng bằng mã 6 số hiện tại từ app authenticator.
+public record TwoFactorEnableRequest(
+    [Required] string Code
+);
+
+public record TwoFactorDisableRequest(
+    [Required] string CurrentPassword
+);
+
+// GET /auth/sessions → danh sách thiết bị/phiên đăng nhập đang hoạt động.
+public record SessionDto(
+    Guid Id,
+    string? DeviceName,
+    string? IpAddress,
+    DateTime CreatedAt,
+    DateTime LastActiveAt,
+    bool IsCurrent
 );

@@ -245,12 +245,19 @@ public class PaymentsController(
             }
 
             var paymentInfo = await payOSService.GetClient().PaymentRequests.GetAsync(orderCode);
-            if (paymentInfo.Status.ToString() == "PAID")
+            // BUG: PaymentLinkStatus.Paid.ToString() trả về "Paid" (PascalCase của SDK), không phải
+            // "PAID" -> so sánh chuỗi cũ luôn sai, khiến giao dịch thành công vẫn bị coi là thất bại
+            // ở đây (dù webhook riêng vẫn xử lý đúng, dẫn đến user thấy "thất bại" nhưng vẫn bị trừ
+            // tiền/lên gói). So sánh trực tiếp bằng enum để tránh phụ thuộc cách SDK format chuỗi.
+            if (paymentInfo.Status == PaymentLinkStatus.Paid)
             {
                 if (transaction.Status == PaymentStatus.pending)
                 {
+                    // Giữ nguyên TransactionRef = orderCode (không ghi đè bằng paymentInfo.Id):
+                    // cả callback lẫn webhook đều tra transaction bằng TransactionRef, nếu đổi giá trị
+                    // này thì bên chạy sau (webhook hoặc callback, thứ tự không đảm bảo) sẽ không tìm
+                    // thấy giao dịch nữa -> có thể hiện "thất bại" cho một giao dịch thực ra đã thành công.
                     transaction.Status = PaymentStatus.completed;
-                    transaction.TransactionRef = paymentInfo.Id;
                     transaction.UpdatedAt = DateTime.UtcNow;
                     await db.SaveChangesAsync();
                 }
@@ -285,8 +292,8 @@ public class PaymentsController(
             {
                 if (transaction.Status == PaymentStatus.pending)
                 {
+                    // Không ghi đè TransactionRef — xem chú thích ở PayOSCallback.
                     transaction.Status = PaymentStatus.completed;
-                    transaction.TransactionRef = verifiedData.PaymentLinkId;
                     transaction.UpdatedAt = DateTime.UtcNow;
                     await db.SaveChangesAsync();
                 }

@@ -13,6 +13,9 @@ public partial class ChatMessage
 
     public string Content { get; set; } = null!;
 
+    /// <summary>So token AI dung cho tin nhan nay (tong prompt + response tu Gemini usageMetadata).</summary>
+    public int TokensUsed { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public virtual ChatSession Session { get; set; } = null!;

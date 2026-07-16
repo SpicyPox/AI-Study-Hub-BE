@@ -12,8 +12,12 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace AIStudyHub.Api.Services;
 
-public class AuthService(AppDbContext db, IConfiguration config, EmailService emailService, IMemoryCache cache)
+public class AuthService(AppDbContext db, IConfiguration config, EmailService emailService, IMemoryCache cache, TotpService totp)
 {
+    // Token tạm (5 phút) phát ra sau khi email/mật khẩu đúng nhưng tài khoản có bật 2FA -> đợi
+    // người dùng nhập mã TOTP ở bước kế tiếp mới thực sự tạo phiên đăng nhập.
+    private static string TwoFactorPendingKey(string token) => $"2fa-pending:{token}";
+    private const int RefreshTokenDays = 7;
     // Thông tin đăng ký tạm đang chờ xác minh OTP. Lưu trong IMemoryCache (hết hạn 15 phút),
     // CHƯA ghi vào DB cho đến khi người dùng nhập đúng mã -> không tạo tài khoản "rác" chưa xác minh.
     private sealed class PendingRegistration
@@ -71,7 +75,7 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
     }
 
     // Bước 2: xác minh OTP. Đúng -> tạo user thật + trả token (đăng nhập luôn).
-    public async Task<AuthResponse> RegisterVerifyAsync(RegisterVerifyRequest req)
+    public async Task<AuthResponse> RegisterVerifyAsync(RegisterVerifyRequest req, string? userAgent = null, string? ipAddress = null)
     {
         var lowerEmail = req.Email.ToLower();
         var key = RegCacheKey(lowerEmail);
@@ -120,10 +124,10 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
             user.Role = defaultRole;
         }
 
-        return await BuildAuthResponseAsync(user);
+        return await BuildAuthResponseAsync(user, userAgent, ipAddress);
     }
 
-    public async Task<AuthResponse> LoginAsync(LoginRequest req)
+    public async Task<LoginResponse> LoginAsync(LoginRequest req, string? userAgent, string? ipAddress)
     {
         var user = await db.Users
             .Include(u => u.Role)
@@ -143,12 +147,40 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
         if (user == null || !isValid)
             throw new UnauthorizedAccessException("Email hoặc mật khẩu không đúng.");
 
-        var response = await BuildAuthResponseAsync(user);
+        if (user.TwoFactorEnabled)
+        {
+            var twoFactorToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+            cache.Set(TwoFactorPendingKey(twoFactorToken), user.Id, TimeSpan.FromMinutes(5));
+            return new LoginResponse("2fa_required", twoFactorToken, null, null, null);
+        }
+
+        var authResp = await BuildAuthResponseAsync(user, userAgent, ipAddress);
 
         // Gửi email thông báo đăng nhập (không block response)
         _ = SendLoginNotificationAsync(user.Email, user.Username);
 
-        return response;
+        return new LoginResponse("ok", null, authResp.User, authResp.AccessToken, authResp.RefreshToken);
+    }
+
+    // Bước 2 khi tài khoản có bật 2FA: xác minh mã TOTP rồi mới thực sự tạo phiên đăng nhập.
+    public async Task<LoginResponse> TwoFactorLoginVerifyAsync(TwoFactorVerifyRequest req, string? userAgent, string? ipAddress)
+    {
+        var key = TwoFactorPendingKey(req.TwoFactorToken);
+        if (!cache.TryGetValue(key, out Guid userId))
+            throw new UnauthorizedAccessException("Phiên xác thực đã hết hạn. Vui lòng đăng nhập lại.");
+
+        var user = await db.Users.Include(u => u.Role).FirstOrDefaultAsync(u => u.Id == userId)
+            ?? throw new UnauthorizedAccessException("Người dùng không tồn tại.");
+
+        if (string.IsNullOrEmpty(user.TwoFactorSecret) || !totp.VerifyCode(totp.Decrypt(user.TwoFactorSecret), req.Code.Trim()))
+            throw new UnauthorizedAccessException("Mã xác thực không đúng.");
+
+        cache.Remove(key);
+
+        var authResp = await BuildAuthResponseAsync(user, userAgent, ipAddress);
+        _ = SendLoginNotificationAsync(user.Email, user.Username);
+
+        return new LoginResponse("ok", null, authResp.User, authResp.AccessToken, authResp.RefreshToken);
     }
 
     private async Task SendLoginNotificationAsync(string email, string username)
@@ -173,30 +205,100 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
 
     public async Task<RefreshResponse> RefreshAsync(string refreshToken)
     {
-        var user = await db.Users
-            .Include(u => u.Role)
-            .FirstOrDefaultAsync(u => u.RefreshToken == refreshToken && u.RefreshTokenExpiry > DateTime.UtcNow)
+        var hash = HashToken(refreshToken);
+        var session = await db.UserSessions
+            .Include(s => s.User).ThenInclude(u => u.Role)
+            .FirstOrDefaultAsync(s => s.RefreshTokenHash == hash && s.RevokedAt == null && s.ExpiresAt > DateTime.UtcNow)
             ?? throw new UnauthorizedAccessException("Refresh token không hợp lệ hoặc đã hết hạn.");
 
-        var newAccessToken = GenerateAccessToken(user);
         var newRefreshToken = GenerateRefreshToken();
-
-        user.RefreshToken = newRefreshToken;
-        user.RefreshTokenExpiry = DateTime.UtcNow.AddDays(7);
+        session.RefreshTokenHash = HashToken(newRefreshToken);
+        session.LastActiveAt = DateTime.UtcNow;
+        session.ExpiresAt = DateTime.UtcNow.AddDays(RefreshTokenDays);
         await db.SaveChangesAsync();
 
+        var newAccessToken = GenerateAccessToken(session.User, session.Id);
         return new RefreshResponse(newAccessToken, newRefreshToken);
     }
 
-    public async Task LogoutAsync(Guid userId)
+    // Đăng xuất = thu hồi phiên hiện tại (thiết bị đang gọi API này). Các thiết bị khác không bị ảnh hưởng.
+    public async Task LogoutAsync(Guid userId, Guid? sessionId)
     {
-        var user = await db.Users.FindAsync(userId);
-        if (user != null)
+        if (sessionId is null) return;
+        var session = await db.UserSessions.FirstOrDefaultAsync(s => s.Id == sessionId && s.UserId == userId);
+        if (session != null)
         {
-            user.RefreshToken = null;
-            user.RefreshTokenExpiry = null;
+            db.UserSessions.Remove(session);
             await db.SaveChangesAsync();
         }
+    }
+
+    public async Task<List<SessionDto>> GetSessionsAsync(Guid userId, Guid? currentSessionId)
+    {
+        var now = DateTime.UtcNow;
+        return await db.UserSessions
+            .Where(s => s.UserId == userId && s.RevokedAt == null && s.ExpiresAt > now)
+            .OrderByDescending(s => s.LastActiveAt)
+            .Select(s => new SessionDto(s.Id, s.DeviceName, s.IpAddress, s.CreatedAt, s.LastActiveAt, s.Id == currentSessionId))
+            .ToListAsync();
+    }
+
+    public async Task RevokeSessionAsync(Guid userId, Guid sessionId)
+    {
+        var session = await db.UserSessions.FirstOrDefaultAsync(s => s.Id == sessionId && s.UserId == userId)
+            ?? throw new KeyNotFoundException("Phiên đăng nhập không tồn tại.");
+        db.UserSessions.Remove(session);
+        await db.SaveChangesAsync();
+    }
+
+    public async Task RevokeOtherSessionsAsync(Guid userId, Guid? currentSessionId)
+    {
+        var others = await db.UserSessions
+            .Where(s => s.UserId == userId && s.Id != currentSessionId)
+            .ToListAsync();
+        db.UserSessions.RemoveRange(others);
+        await db.SaveChangesAsync();
+    }
+
+    // ─── Xác thực 2 bước (TOTP) ─────────────────────────────────────────────────
+    public async Task<TwoFactorSetupResponse> TwoFactorSetupAsync(Guid userId)
+    {
+        var user = await db.Users.FindAsync(userId) ?? throw new KeyNotFoundException("Người dùng không tồn tại.");
+
+        var secret = totp.GenerateSecret();
+        user.TwoFactorPendingSecret = totp.Encrypt(secret);
+        await db.SaveChangesAsync();
+
+        return new TwoFactorSetupResponse(secret, totp.BuildOtpAuthUri(secret, user.Email));
+    }
+
+    public async Task TwoFactorEnableAsync(Guid userId, TwoFactorEnableRequest req)
+    {
+        var user = await db.Users.FindAsync(userId) ?? throw new KeyNotFoundException("Người dùng không tồn tại.");
+
+        if (string.IsNullOrEmpty(user.TwoFactorPendingSecret))
+            throw new InvalidOperationException("Chưa khởi tạo thiết lập 2FA. Vui lòng quét lại mã QR.");
+
+        if (!totp.VerifyCode(totp.Decrypt(user.TwoFactorPendingSecret), req.Code.Trim()))
+            throw new InvalidOperationException("Mã xác thực không đúng.");
+
+        user.TwoFactorSecret = user.TwoFactorPendingSecret;
+        user.TwoFactorPendingSecret = null;
+        user.TwoFactorEnabled = true;
+        await db.SaveChangesAsync();
+    }
+
+    public async Task TwoFactorDisableAsync(Guid userId, TwoFactorDisableRequest req)
+    {
+        var user = await db.Users.FindAsync(userId) ?? throw new KeyNotFoundException("Người dùng không tồn tại.");
+
+        if (!BCrypt.Net.BCrypt.Verify(req.CurrentPassword, user.PasswordHash))
+            throw new UnauthorizedAccessException("Mật khẩu hiện tại không đúng.");
+
+        user.TwoFactorEnabled = false;
+        user.TwoFactorSecret = null;
+        user.TwoFactorPendingSecret = null;
+        await db.SaveChangesAsync();
     }
 
     public async Task<UserDto> GetMeAsync(Guid userId)
@@ -248,7 +350,7 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
         return ToDto(user);
     }
 
-    private async Task<AuthResponse> BuildAuthResponseAsync(User user)
+    private async Task<AuthResponse> BuildAuthResponseAsync(User user, string? userAgent = null, string? ipAddress = null)
     {
         // Ensure Role is loaded for generating access token
         if (user.Role == null && user.RoleId.HasValue)
@@ -262,17 +364,27 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
             .Include(s => s.Package)
             .LoadAsync();
 
-        var accessToken = GenerateAccessToken(user);
         var refreshToken = GenerateRefreshToken();
-
-        user.RefreshToken = refreshToken;
-        user.RefreshTokenExpiry = DateTime.UtcNow.AddDays(7);
+        var session = new UserSession
+        {
+            UserId = user.Id,
+            RefreshTokenHash = HashToken(refreshToken),
+            DeviceName = ParseDeviceName(userAgent),
+            UserAgent = userAgent,
+            IpAddress = ipAddress,
+            CreatedAt = DateTime.UtcNow,
+            LastActiveAt = DateTime.UtcNow,
+            ExpiresAt = DateTime.UtcNow.AddDays(RefreshTokenDays),
+        };
+        db.UserSessions.Add(session);
         await db.SaveChangesAsync();
+
+        var accessToken = GenerateAccessToken(user, session.Id);
 
         return new AuthResponse(ToDto(user), accessToken, refreshToken);
     }
 
-    private string GenerateAccessToken(User user)
+    private string GenerateAccessToken(User user, Guid sessionId)
     {
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config["Jwt:Key"]!));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -281,6 +393,7 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new Claim(ClaimTypes.Email, user.Email),
             new Claim(ClaimTypes.Role, user.Role?.Name ?? "user"),
+            new Claim("sid", sessionId.ToString()),
         };
         var token = new JwtSecurityToken(
             issuer: config["Jwt:Issuer"],
@@ -293,6 +406,38 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
 
     private static string GenerateRefreshToken() =>
         Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
+
+    private static string HashToken(string token) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+
+    // Nhận diện thiết bị/trình duyệt thô từ User-Agent, đủ để hiển thị trong danh sách phiên
+    // đăng nhập (không cần thư viện UA-parser đầy đủ).
+    private static string? ParseDeviceName(string? userAgent)
+    {
+        if (string.IsNullOrWhiteSpace(userAgent)) return null;
+
+        string os = userAgent switch
+        {
+            var ua when ua.Contains("Windows") => "Windows",
+            var ua when ua.Contains("Android") => "Android",
+            var ua when ua.Contains("iPhone") || ua.Contains("iPad") => "iOS",
+            var ua when ua.Contains("Macintosh") => "macOS",
+            var ua when ua.Contains("Linux") => "Linux",
+            _ => "Không xác định",
+        };
+
+        string browser = userAgent switch
+        {
+            var ua when ua.Contains("Edg/") => "Edge",
+            var ua when ua.Contains("OPR/") || ua.Contains("Opera") => "Opera",
+            var ua when ua.Contains("Chrome/") => "Chrome",
+            var ua when ua.Contains("Firefox/") => "Firefox",
+            var ua when ua.Contains("Safari/") => "Safari",
+            _ => "Trình duyệt",
+        };
+
+        return $"{browser} trên {os}";
+    }
 
     public async Task ForgotPasswordAsync(ForgotPasswordRequest req)
     {
@@ -401,7 +546,7 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
     ///   - status "otp_required" nếu email chưa có tài khoản → gửi OTP
     ///   - status "ok" nếu tài khoản đã tồn tại → đăng nhập + gửi mail thông báo
     /// </summary>
-    public async Task<GoogleAuthResponse> LoginWithGoogleAsync(GoogleLoginRequest req)
+    public async Task<GoogleAuthResponse> LoginWithGoogleAsync(GoogleLoginRequest req, string? userAgent = null, string? ipAddress = null)
     {
         var (lowerEmail, name) = await ExchangeGoogleCodeAsync(req.Credential);
 
@@ -441,14 +586,14 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
         }
 
         // Tài khoản đã có → đăng nhập + gửi thông báo
-        var authResp = await BuildAuthResponseAsync(user);
+        var authResp = await BuildAuthResponseAsync(user, userAgent, ipAddress);
         _ = SendLoginNotificationAsync(user.Email, user.Username);
 
         return new GoogleAuthResponse("ok", authResp.User, authResp.AccessToken, authResp.RefreshToken);
     }
 
     /// <summary>Xác minh OTP Google signup → tạo tài khoản + đăng nhập</summary>
-    public async Task<AuthResponse> GoogleVerifyAsync(GoogleVerifyRequest req)
+    public async Task<AuthResponse> GoogleVerifyAsync(GoogleVerifyRequest req, string? userAgent = null, string? ipAddress = null)
     {
         var lowerEmail = req.Email.ToLower();
         var key = GooglePendingKey(lowerEmail);
@@ -488,7 +633,7 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
         db.Users.Add(user);
         await db.SaveChangesAsync();
 
-        return await BuildAuthResponseAsync(user);
+        return await BuildAuthResponseAsync(user, userAgent, ipAddress);
     }
 
     private sealed class GoogleTokenResponse
@@ -527,6 +672,7 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
             u.Username,
             u.Email,
             u.Role?.Name ?? "user",
+            u.TwoFactorEnabled,
             activeSub?.Package?.Name,
             activeSub?.EndDate
         );

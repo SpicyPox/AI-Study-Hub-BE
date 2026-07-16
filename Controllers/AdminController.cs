@@ -30,7 +30,7 @@ public class AdminController(AppDbContext db, CloudinaryService cloudinary) : Co
                 u.Id, u.Username, u.Email, u.Role != null ? u.Role.Name : "user",
                 "active",
                 u.Documents.Count, u.Documents.Sum(d => d.FileSize ?? 0),
-                0, // u.ChatSessions.SelectMany(c => c.ChatMessages).Sum(m => m.TokensUsed) - missing in DB
+                u.ChatSessions.SelectMany(c => c.ChatMessages).Sum(m => m.TokensUsed),
                 u.CreatedAt))
             .ToListAsync();
 
@@ -90,18 +90,20 @@ public class AdminController(AppDbContext db, CloudinaryService cloudinary) : Co
     {
         var totalUsers = await db.Users.CountAsync();
         var totalDocs = await db.Documents.CountAsync(d => !d.IsDeleted);
-        var totalTokens = 0; // await db.ChatMessages.SumAsync(m => (long)m.TokensUsed);
-        return new AdminStatsDto(totalUsers, totalDocs, totalTokens, 0);
+        var totalTokens = await db.ChatMessages.SumAsync(m => (long)m.TokensUsed);
+        var mrr = await ComputeMrrAsync();
+        return new AdminStatsDto(totalUsers, totalDocs, totalTokens, mrr);
     }
 
     [HttpGet("tokens")]
     public async Task<TokenStatsResponse> GetTokenStats([FromQuery] int days = 14)
     {
-        var since = DateTime.UtcNow.AddDays(-days).Date;
+        // Cua so `days` ngay ket thuc HOM NAY (gom ca hom nay).
+        var since = DateTime.UtcNow.Date.AddDays(-(days - 1));
         var raw = await db.ChatMessages
             .Where(m => m.CreatedAt >= since)
             .GroupBy(m => m.CreatedAt.Date)
-            .Select(g => new { Date = g.Key, Tokens = 0 }) // Tokens missing in schema
+            .Select(g => new { Date = g.Key, Tokens = g.Sum(x => x.TokensUsed) })
             .OrderBy(x => x.Date)
             .ToListAsync();
 
@@ -113,7 +115,7 @@ public class AdminController(AppDbContext db, CloudinaryService cloudinary) : Co
             .ToList();
 
         var today = raw.FirstOrDefault(r => r.Date == DateTime.UtcNow.Date)?.Tokens ?? 0;
-        var total = 0; // await db.ChatMessages.SumAsync(m => m.TokensUsed);
+        var total = await db.ChatMessages.SumAsync(m => m.TokensUsed);
 
         return new TokenStatsResponse(daily, today, total);
     }
@@ -166,6 +168,97 @@ public class AdminController(AppDbContext db, CloudinaryService cloudinary) : Co
         db.Documents.Remove(doc);
         await db.SaveChangesAsync();
         return Ok();
+    }
+
+    // ── Subscriptions: lay tu user_subscriptions + subscription_packages + users ──
+    [HttpGet("subscriptions")]
+    public async Task<AdminSubscriptionsResponse> GetSubscriptions()
+    {
+        var now = DateTime.UtcNow;
+        var subs = await db.UserSubscriptions
+            .OrderByDescending(s => s.StartDate)
+            .Select(s => new AdminSubscriptionDto(
+                s.Id, s.User.Username, s.User.Email, s.Package.Name,
+                s.Package.Price, s.Status, s.StartDate, s.EndDate))
+            .ToListAsync();
+
+        var active = subs.Count(s => s.Status == "active" && s.EndDate >= now);
+        var pastDue = subs.Count(s => s.EndDate < now || s.Status == "past_due");
+        var breakdown = subs.GroupBy(s => s.Plan).ToDictionary(g => g.Key, g => g.Count());
+        var mrr = await ComputeMrrAsync();
+
+        return new AdminSubscriptionsResponse(subs, mrr, active, pastDue, breakdown);
+    }
+
+    // ── Usage: upload (documents) + chat (chat_messages) theo ngay + hoat dong gan day ──
+    [HttpGet("usage")]
+    public async Task<AdminUsageResponse> GetUsage([FromQuery] int days = 14)
+    {
+        // Cua so `days` ngay ket thuc HOM NAY (gom ca hom nay).
+        var since = DateTime.UtcNow.Date.AddDays(-(days - 1));
+
+        var uploadsRaw = await db.Documents
+            .Where(d => !d.IsDeleted && d.CreatedAt >= since)
+            .GroupBy(d => d.CreatedAt.Date)
+            .Select(g => new { Date = g.Key, Count = g.Count() })
+            .ToListAsync();
+
+        // Moi luot hoi cua nguoi dung = 1 tin nhan role user.
+        var chatsRaw = await db.ChatMessages
+            .Where(m => m.CreatedAt >= since && m.Role == ChatRole.user)
+            .GroupBy(m => m.CreatedAt.Date)
+            .Select(g => new { Date = g.Key, Count = g.Count() })
+            .ToListAsync();
+
+        var daily = Enumerable.Range(0, days)
+            .Select(i => since.AddDays(i))
+            .Select(d => new UsageDailyDto(
+                d.ToString("MM-dd"),
+                uploadsRaw.FirstOrDefault(r => r.Date == d)?.Count ?? 0,
+                chatsRaw.FirstOrDefault(r => r.Date == d)?.Count ?? 0))
+            .ToList();
+
+        // Hoat dong gan day: gop upload + chat + giao dich hoan tat, lay 15 su kien moi nhat.
+        var recentUploads = await db.Documents
+            .Where(d => !d.IsDeleted)
+            .OrderByDescending(d => d.CreatedAt).Take(15)
+            .Select(d => new { d.CreatedAt, User = d.User.Username, Action = "Upload", Target = d.Title })
+            .ToListAsync();
+
+        var recentChats = await db.ChatMessages
+            .Where(m => m.Role == ChatRole.user)
+            .OrderByDescending(m => m.CreatedAt).Take(15)
+            .Select(m => new { m.CreatedAt, User = m.Session.User.Username, Action = "Chat AI", Target = m.Content })
+            .ToListAsync();
+
+        var recentTxns = await db.Transactions
+            .Where(t => t.Status == PaymentStatus.completed)
+            .OrderByDescending(t => t.CreatedAt).Take(15)
+            .Select(t => new { t.CreatedAt, User = t.User.Username, Action = "Thanh toán",
+                Target = t.SubscriptionPackage != null ? t.SubscriptionPackage.Name : "Nạp dung lượng" })
+            .ToListAsync();
+
+        var recentActivity = recentUploads.Concat(recentChats).Concat(recentTxns)
+            .OrderByDescending(x => x.CreatedAt).Take(15)
+            .Select(x => new ActivityDto(
+                x.CreatedAt.ToString("dd/MM HH:mm"),
+                x.User, x.Action,
+                x.Target.Length > 60 ? x.Target[..60] + "…" : x.Target))
+            .ToList();
+
+        // DAU/MAU va luot tim kiem chua duoc log -> null => FE hien "chua co du lieu".
+        return new AdminUsageResponse(daily, recentActivity, daily.Sum(d => d.Uploads), daily.Sum(d => d.Chats), null, null, null);
+    }
+
+    private async Task<decimal> ComputeMrrAsync()
+    {
+        var now = DateTime.UtcNow;
+        var active = await db.UserSubscriptions
+            .Where(s => s.Status == "active" && s.EndDate >= now)
+            .Select(s => new { s.Package.Price, s.Package.DurationDays })
+            .ToListAsync();
+        // Quy doanh thu ve theo thang (MRR): gia * 30 / so ngay cua goi.
+        return Math.Round(active.Sum(s => s.DurationDays > 0 ? s.Price * 30m / s.DurationDays : s.Price), 0);
     }
 
     private Guid UserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
