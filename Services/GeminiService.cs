@@ -15,7 +15,10 @@ public class GeminiService(IConfiguration config, IHttpClientFactory httpFactory
     private record GeminiPart(string Text);
     private record GeminiContent(string Role, List<GeminiPart> Parts);
 
-    public async Task<string> StreamAsync(
+    /// <summary>Ket qua stream: noi dung tra loi + so token AI da dung (0 neu khong lay duoc).</summary>
+    public record GeminiStreamResult(string Reply, int Tokens);
+
+    public async Task<GeminiStreamResult> StreamAsync(
         string userMessage,
         IEnumerable<ChatMessage> history,
         string? documentContext,
@@ -34,7 +37,7 @@ public class GeminiService(IConfiguration config, IHttpClientFactory httpFactory
         return await StreamGeminiAsync(userMessage, history, documentContext, response, ct);
     }
 
-    private static async Task<string> StreamStubAsync(string userMessage, HttpResponse response, CancellationToken ct)
+    private static async Task<GeminiStreamResult> StreamStubAsync(string userMessage, HttpResponse response, CancellationToken ct)
     {
         var reply = $"[Stub] Câu trả lời cho: \"{userMessage}\"\n\nĐây là phản hồi demo của Gemini. Hãy thêm Gemini API key vào appsettings.json để bật Gemini AI thật.";
         foreach (var word in reply.Split(' '))
@@ -45,10 +48,12 @@ public class GeminiService(IConfiguration config, IHttpClientFactory httpFactory
             await Task.Delay(30, ct);
         }
         await response.WriteAsync("data: [DONE]\n\n", ct);
-        return reply;
+        // Che do stub khong co token that -> uoc luong ~4 ky tu/token de dashboard co so lieu.
+        var estTokens = (userMessage.Length + reply.Length) / 4;
+        return new GeminiStreamResult(reply, estTokens);
     }
 
-    private async Task<string> StreamGeminiAsync(
+    private async Task<GeminiStreamResult> StreamGeminiAsync(
         string userMessage,
         IEnumerable<ChatMessage> history,
         string? documentContext,
@@ -96,6 +101,7 @@ public class GeminiService(IConfiguration config, IHttpClientFactory httpFactory
         using var reader = new StreamReader(stream);
 
         var fullReplyBuilder = new StringBuilder();
+        int totalTokens = 0;
         string? line;
         while ((line = await reader.ReadLineAsync(ct)) != null && !ct.IsCancellationRequested)
         {
@@ -122,12 +128,20 @@ public class GeminiService(IConfiguration config, IHttpClientFactory httpFactory
                         }
                     }
                 }
+
+                // usageMetadata xuat hien o chunk cuoi (tong cong don) -> lay lam so token that.
+                if (doc.RootElement.TryGetProperty("usageMetadata", out var usage) &&
+                    usage.TryGetProperty("totalTokenCount", out var ttc) &&
+                    ttc.TryGetInt32(out var t))
+                {
+                    totalTokens = t;
+                }
             }
             catch { /* skip malformed chunks */ }
         }
 
         await response.WriteAsync("data: [DONE]\n\n", ct);
-        return fullReplyBuilder.ToString();
+        return new GeminiStreamResult(fullReplyBuilder.ToString(), totalTokens);
     }
 
     public async Task<string> GenerateSummaryAsync(string documentContent, CancellationToken ct)
