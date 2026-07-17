@@ -51,6 +51,7 @@ public partial class AppDbContext : DbContext
             // Doi sang varchar + HasConversion<string>: cung loi enum native Postgres nhu Document.Visibility.
             entity.Property(e => e.Role).HasColumnName("role").HasMaxLength(20).HasConversion<string>();
             entity.Property(e => e.Content).HasColumnName("content");
+            entity.Property(e => e.TokensUsed).HasColumnName("tokens_used").HasDefaultValue(0);
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
             entity.Property(e => e.SessionId).HasColumnName("session_id");
 

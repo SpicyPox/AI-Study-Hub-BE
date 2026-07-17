@@ -3,6 +3,7 @@ using System;
 using AIStudyHub.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AIStudyHub.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260716164319_AddTokensUsedToChatMessages")]
+    partial class AddTokensUsedToChatMessages
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -236,84 +239,6 @@ namespace AIStudyHub.Api.Migrations
                     b.HasIndex(new[] { "UserId" }, "idx_documents_user_id");
 
                     b.ToTable("documents", "ai_study_hub");
-                });
-
-            modelBuilder.Entity("AIStudyHub.Api.Models.DocumentComment", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasDefaultValueSql("gen_random_uuid()");
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)")
-                        .HasColumnName("content");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<Guid>("DocumentId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("document_id");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("user_id");
-
-                    b.HasKey("Id")
-                        .HasName("document_comments_pkey");
-
-                    b.HasIndex("UserId");
-
-                    b.HasIndex(new[] { "DocumentId" }, "idx_document_comments_document_id");
-
-                    b.ToTable("document_comments", "ai_study_hub");
-                });
-
-            modelBuilder.Entity("AIStudyHub.Api.Models.DocumentRating", b =>
-                {
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("user_id");
-
-                    b.Property<Guid>("DocumentId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("document_id");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<int>("Stars")
-                        .HasColumnType("integer")
-                        .HasColumnName("stars");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at")
-                        .HasDefaultValueSql("now()");
-
-                    b.HasKey("UserId", "DocumentId")
-                        .HasName("document_ratings_pkey");
-
-                    b.HasIndex(new[] { "DocumentId" }, "idx_document_ratings_document_id");
-
-                    b.ToTable("document_ratings", "ai_study_hub");
                 });
 
             modelBuilder.Entity("AIStudyHub.Api.Models.Favorite", b =>
@@ -700,25 +625,18 @@ namespace AIStudyHub.Api.Migrations
                         .HasColumnName("password_hash")
                         .HasComment("Nguyên tắc tử huyệt: Không bao giờ lưu mật khẩu gốc (plaintext). Cột này lưu chuỗi đã mã hóa một chiều (Bcrypt/Argon2).");
 
+                    b.Property<string>("RefreshToken")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("refresh_token");
+
+                    b.Property<DateTime?>("RefreshTokenExpiry")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("refresh_token_expiry");
+
                     b.Property<Guid?>("RoleId")
                         .HasColumnType("uuid")
                         .HasColumnName("role_id");
-
-                    b.Property<bool>("TwoFactorEnabled")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false)
-                        .HasColumnName("two_factor_enabled");
-
-                    b.Property<string>("TwoFactorPendingSecret")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)")
-                        .HasColumnName("two_factor_pending_secret");
-
-                    b.Property<string>("TwoFactorSecret")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)")
-                        .HasColumnName("two_factor_secret");
 
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAdd()
@@ -744,70 +662,6 @@ namespace AIStudyHub.Api.Migrations
                         .IsUnique();
 
                     b.ToTable("users", "ai_study_hub");
-                });
-
-            modelBuilder.Entity("AIStudyHub.Api.Models.UserSession", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasDefaultValueSql("gen_random_uuid()");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<string>("DeviceName")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)")
-                        .HasColumnName("device_name");
-
-                    b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("expires_at");
-
-                    b.Property<string>("IpAddress")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
-                        .HasColumnName("ip_address");
-
-                    b.Property<DateTime>("LastActiveAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("last_active_at")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<string>("RefreshTokenHash")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)")
-                        .HasColumnName("refresh_token_hash");
-
-                    b.Property<DateTime?>("RevokedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("revoked_at");
-
-                    b.Property<string>("UserAgent")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("user_agent");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("user_id");
-
-                    b.HasKey("Id")
-                        .HasName("user_sessions_pkey");
-
-                    b.HasIndex(new[] { "UserId" }, "idx_user_sessions_user_id");
-
-                    b.HasIndex(new[] { "RefreshTokenHash" }, "user_sessions_refresh_token_hash_key")
-                        .IsUnique();
-
-                    b.ToTable("user_sessions", "ai_study_hub");
                 });
 
             modelBuilder.Entity("AIStudyHub.Api.Models.UserStorage", b =>
@@ -988,48 +842,6 @@ namespace AIStudyHub.Api.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("AIStudyHub.Api.Models.DocumentComment", b =>
-                {
-                    b.HasOne("AIStudyHub.Api.Models.Document", "Document")
-                        .WithMany("Comments")
-                        .HasForeignKey("DocumentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("document_comments_document_id_fkey");
-
-                    b.HasOne("AIStudyHub.Api.Models.User", "User")
-                        .WithMany("DocumentComments")
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("document_comments_user_id_fkey");
-
-                    b.Navigation("Document");
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("AIStudyHub.Api.Models.DocumentRating", b =>
-                {
-                    b.HasOne("AIStudyHub.Api.Models.Document", "Document")
-                        .WithMany("Ratings")
-                        .HasForeignKey("DocumentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("document_ratings_document_id_fkey");
-
-                    b.HasOne("AIStudyHub.Api.Models.User", "User")
-                        .WithMany("DocumentRatings")
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("document_ratings_user_id_fkey");
-
-                    b.Navigation("Document");
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("AIStudyHub.Api.Models.Favorite", b =>
                 {
                     b.HasOne("AIStudyHub.Api.Models.Document", "Document")
@@ -1100,18 +912,6 @@ namespace AIStudyHub.Api.Migrations
                         .HasConstraintName("users_role_id_fkey");
 
                     b.Navigation("Role");
-                });
-
-            modelBuilder.Entity("AIStudyHub.Api.Models.UserSession", b =>
-                {
-                    b.HasOne("AIStudyHub.Api.Models.User", "User")
-                        .WithMany("Sessions")
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("user_sessions_user_id_fkey");
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("AIStudyHub.Api.Models.UserStorage", b =>
@@ -1190,11 +990,7 @@ namespace AIStudyHub.Api.Migrations
                 {
                     b.Navigation("CloudFile");
 
-                    b.Navigation("Comments");
-
                     b.Navigation("Favorites");
-
-                    b.Navigation("Ratings");
                 });
 
             modelBuilder.Entity("AIStudyHub.Api.Models.Role", b =>
@@ -1223,17 +1019,11 @@ namespace AIStudyHub.Api.Migrations
                 {
                     b.Navigation("ChatSessions");
 
-                    b.Navigation("DocumentComments");
-
-                    b.Navigation("DocumentRatings");
-
                     b.Navigation("Documents");
 
                     b.Navigation("Favorites");
 
                     b.Navigation("PasswordResetTokens");
-
-                    b.Navigation("Sessions");
 
                     b.Navigation("Transactions");
 

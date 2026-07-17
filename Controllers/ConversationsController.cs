@@ -69,7 +69,7 @@ public class ConversationsController(AppDbContext db, GeminiService gemini, Docu
         var msgs = await db.ChatMessages
             .Where(m => m.SessionId == id)
             .OrderBy(m => m.CreatedAt)
-            .Select(m => new MessageDto(m.Id, m.Role.ToString(), m.Content, 0, m.CreatedAt))
+            .Select(m => new MessageDto(m.Id, m.Role.ToString(), m.Content, m.TokensUsed, m.CreatedAt))
             .ToListAsync();
         return new MessageListResponse(msgs);
     }
@@ -129,15 +129,16 @@ public class ConversationsController(AppDbContext db, GeminiService gemini, Docu
         }
 
         // Stream Gemini response
-        var assistantReply = await gemini.StreamAsync(req.Content, history, docContext, Response, ct);
+        var result = await gemini.StreamAsync(req.Content, history, docContext, Response, ct);
 
-        // Save assistant message
-        if (!string.IsNullOrWhiteSpace(assistantReply))
+        // Save assistant message (kem so token AI da dung cho luot nay)
+        if (!string.IsNullOrWhiteSpace(result.Reply))
         {
             var assistantMsg = new ChatMessage
             {
                 Role = ChatRole.assistant,
-                Content = assistantReply,
+                Content = result.Reply,
+                TokensUsed = result.Tokens,
                 SessionId = id
             };
             db.ChatMessages.Add(assistantMsg);
