@@ -30,8 +30,27 @@ public record DocumentDto(
     string? Description, string[] Tags, int? Pages,
     bool IsPublic, string? ShareToken, string? ShareUrl,
     Guid? SubjectId, string? SubjectName, string? SubjectColor, string? SubjectCode,
-    string OwnerName, DateTime UpdatedAt, DateTime CreatedAt
+    string OwnerName, DateTime UpdatedAt, DateTime CreatedAt,
+    double AverageRating = 0, int RatingCount = 0, int? MyRating = null
 );
 
 public record DocumentListResponse(IEnumerable<DocumentDto> Documents, int Total);
 public record ShareResponse(string ShareToken, string ShareUrl);
+
+// ─── Đánh giá sao & bình luận cộng đồng ─────────────────────────────────────
+public record RateDocumentRequest(
+    [Required, Range(1, 5)] int Stars
+);
+
+public record RatingSummaryDto(double AverageRating, int RatingCount, int? MyRating);
+
+public record CreateCommentRequest(
+    [Required, MinLength(1), MaxLength(1000)] string Content
+);
+
+public record CommentDto(
+    Guid Id, string Content, string AuthorName, Guid AuthorId,
+    DateTime CreatedAt, bool IsMine
+);
+
+public record CommentListResponse(IEnumerable<CommentDto> Comments, int Total);

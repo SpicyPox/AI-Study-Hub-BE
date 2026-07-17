@@ -51,6 +51,10 @@ public partial class User
 
     public virtual ICollection<Favorite> Favorites { get; set; } = new List<Favorite>();
 
+    public virtual ICollection<DocumentRating> DocumentRatings { get; set; } = new List<DocumentRating>();
+
+    public virtual ICollection<DocumentComment> DocumentComments { get; set; } = new List<DocumentComment>();
+
     public virtual ICollection<UserSubscription> UserSubscriptions { get; set; } = new List<UserSubscription>();
 
     public virtual UserStorage? UserStorage { get; set; }
