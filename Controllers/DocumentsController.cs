@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
 using AIStudyHub.Api.Data;
 using AIStudyHub.Api.DTOs.Documents;
 using AIStudyHub.Api.Models;
@@ -11,7 +12,7 @@ namespace AIStudyHub.Api.Controllers;
 
 [ApiController]
 [Route("api/documents")]
-public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, DocumentTextExtractor extractor, GeminiService gemini) : ControllerBase
+public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, DocumentTextExtractor extractor, GeminiService gemini, IConfiguration config) : ControllerBase
 {
     // Maximum allowed upload size per file (50 MB).
     private const long MaxUploadBytes = 50L * 1024 * 1024;
@@ -70,7 +71,7 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
             .FirstOrDefaultAsync(d => d.Id == id)
             ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
 
-        if (doc.Visibility != DocVisibility.@public && doc.UserId != uid)
+        if (doc.Visibility != DocVisibility.@public && doc.UserId != uid && doc.ShareToken == null)
             throw new KeyNotFoundException("Tai lieu khong ton tai.");
 
         var (avgMap, countMap, myMap) = await LoadRatingsAsync([id], uid);
@@ -197,7 +198,7 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
         var uid = UserIdOrNull();
         var doc = await db.Documents.Include(d => d.CloudFile)
             .FirstOrDefaultAsync(d => d.Id == id && !d.IsDeleted
-                && (d.Visibility == DocVisibility.@public || d.UserId == uid))
+                && (d.Visibility == DocVisibility.@public || d.UserId == uid || d.ShareToken != null))
             ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
 
         if (doc.CloudFile == null || string.IsNullOrEmpty(doc.CloudFile.CloudUrl))
@@ -240,7 +241,7 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
         var uid = UserIdOrNull();
         var doc = await db.Documents.Include(d => d.CloudFile)
             .FirstOrDefaultAsync(d => d.Id == id && !d.IsDeleted
-                && (d.Visibility == DocVisibility.@public || d.UserId == uid))
+                && (d.Visibility == DocVisibility.@public || d.UserId == uid || d.ShareToken != null))
             ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
 
         if (doc.CloudFile == null || string.IsNullOrEmpty(doc.CloudFile.CloudUrl))
@@ -298,6 +299,53 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
         return Ok(new { summary });
     }
 
+    [Authorize(Roles = "user")]
+    [HttpPost("{id:guid}/share")]
+    public async Task<ActionResult<ShareResponse>> CreateShareLink(Guid id)
+    {
+        var uid = UserId();
+        var doc = await db.Documents.FirstOrDefaultAsync(d => d.Id == id && d.UserId == uid && !d.IsDeleted)
+            ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
+
+        if (doc.ShareToken == null)
+        {
+            doc.ShareToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(12))
+                .Replace("+", "-").Replace("/", "_").TrimEnd('=');
+            doc.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+
+        var shareUrl = $"{config["App:FrontendUrl"]}/shared/{doc.ShareToken}";
+        return Ok(new ShareResponse(doc.ShareToken, shareUrl));
+    }
+
+    [Authorize(Roles = "user")]
+    [HttpDelete("{id:guid}/share")]
+    public async Task<IActionResult> RevokeShareLink(Guid id)
+    {
+        var uid = UserId();
+        var doc = await db.Documents.FirstOrDefaultAsync(d => d.Id == id && d.UserId == uid && !d.IsDeleted)
+            ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
+
+        doc.ShareToken = null;
+        doc.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        return Ok();
+    }
+
+    [HttpGet("shared/{token}")]
+    public async Task<ActionResult<DocumentDto>> GetByShareToken(string token)
+    {
+        var doc = await db.Documents
+            .Include(d => d.Subject)
+            .Include(d => d.User)
+            .FirstOrDefaultAsync(d => d.ShareToken == token && !d.IsDeleted)
+            ?? throw new KeyNotFoundException("Link chia se khong ton tai hoac da bi huy.");
+
+        var (avgMap, countMap, myMap) = await LoadRatingsAsync([doc.Id], null);
+        return ToDto(doc, avgMap, countMap, myMap);
+    }
+
     private Guid UserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
     private Guid? UserIdOrNull()
@@ -342,12 +390,16 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
         return ToDto(d, avg, count, mine);
     }
 
-    private static DocumentDto ToDto(Document d, Dictionary<Guid, double> avgMap, Dictionary<Guid, int> countMap, Dictionary<Guid, int> mineMap)
+    private DocumentDto ToDto(Document d, Dictionary<Guid, double> avgMap, Dictionary<Guid, int> countMap, Dictionary<Guid, int> mineMap)
     {
+        string? shareUrl = d.ShareToken != null
+            ? $"{config["App:FrontendUrl"]}/shared/{d.ShareToken}"
+            : null;
+
         return new DocumentDto(
             d.Id, d.Title, d.FileType ?? string.Empty, FormatSize(d.FileSize ?? 0),
             d.Description, Array.Empty<string>(), 0,
-            d.Visibility == DocVisibility.@public, null, null,
+            d.Visibility == DocVisibility.@public, d.ShareToken, shareUrl,
             d.SubjectId, d.Subject?.Name, null, d.Subject?.Code,
             d.User?.Username ?? string.Empty, d.UpdatedAt, d.CreatedAt,
             avgMap.GetValueOrDefault(d.Id), countMap.GetValueOrDefault(d.Id),

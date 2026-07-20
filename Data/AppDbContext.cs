@@ -133,6 +133,8 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Visibility).HasColumnName("visibility").HasMaxLength(20)
                 .HasConversion<string>().HasDefaultValue(DocVisibility.@public);
             entity.Property(e => e.IsDeleted).HasDefaultValue(false).HasColumnName("is_deleted");
+            entity.Property(e => e.ShareToken).HasMaxLength(64).HasColumnName("share_token");
+            entity.HasIndex(e => e.ShareToken, "idx_documents_share_token").IsUnique().HasFilter("share_token IS NOT NULL");
             entity.Property(e => e.SubjectId).HasColumnName("subject_id");
             entity.Property(e => e.Title).HasMaxLength(255).HasColumnName("title");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()").HasColumnName("updated_at");

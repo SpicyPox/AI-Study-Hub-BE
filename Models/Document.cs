@@ -34,6 +34,8 @@ public partial class Document
     /// </summary>
     public bool IsDeleted { get; set; }
 
+    public string? ShareToken { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }
