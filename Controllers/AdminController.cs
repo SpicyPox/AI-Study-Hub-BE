@@ -190,6 +190,122 @@ public class AdminController(AppDbContext db, CloudinaryService cloudinary) : Co
         return new AdminSubscriptionsResponse(subs, mrr, active, pastDue, breakdown);
     }
 
+    // ── Revenue: doanh thu tu Transactions completed, gom theo quy va theo thang ──
+    [HttpGet("revenue")]
+    public async Task<AdminRevenueResponse> GetRevenue([FromQuery] int? year)
+    {
+        var completed = db.Transactions.Where(t => t.Status == PaymentStatus.completed);
+
+        // Cac nam co giao dich hoan tat (moi nhat truoc).
+        var years = await completed
+            .Select(t => t.CreatedAt.Year)
+            .Distinct()
+            .OrderByDescending(y => y)
+            .ToListAsync();
+
+        var selectedYear = year ?? (years.Count > 0 ? years[0] : DateTime.UtcNow.Year);
+
+        // Gom doanh thu theo thang trong nam da chon.
+        var monthlyRaw = await completed
+            .Where(t => t.CreatedAt.Year == selectedYear)
+            .GroupBy(t => t.CreatedAt.Month)
+            .Select(g => new { Month = g.Key, Revenue = g.Sum(t => t.Amount), Count = g.Count() })
+            .ToListAsync();
+
+        var months = Enumerable.Range(1, 12)
+            .Select(m =>
+            {
+                var r = monthlyRaw.FirstOrDefault(x => x.Month == m);
+                return new RevenuePeriodDto($"Th{m:00}", r?.Revenue ?? 0m, r?.Count ?? 0);
+            })
+            .ToList();
+
+        // Quy = 3 thang: Q1 (1-3), Q2 (4-6), Q3 (7-9), Q4 (10-12).
+        var quarters = Enumerable.Range(1, 4)
+            .Select(q =>
+            {
+                var inQ = monthlyRaw.Where(x => (x.Month - 1) / 3 + 1 == q).ToList();
+                return new RevenuePeriodDto($"Q{q}", inQ.Sum(x => x.Revenue), inQ.Sum(x => x.Count));
+            })
+            .ToList();
+
+        var totalYear = monthlyRaw.Sum(x => x.Revenue);
+        var txnsYear = monthlyRaw.Sum(x => x.Count);
+
+        // Bao dam nam dang chon luon co trong danh sach de FE render dropdown.
+        if (!years.Contains(selectedYear)) years.Insert(0, selectedYear);
+
+        return new AdminRevenueResponse(selectedYear, totalYear, txnsYear, quarters, months, years);
+    }
+
+    // ── Revenue summary: so sanh thang nay/nam nay voi ky truoc (MoM & YoY) ──
+    [HttpGet("revenue/summary")]
+    public async Task<RevenueSummaryResponse> GetRevenueSummary()
+    {
+        var now = DateTime.UtcNow;
+        var thisMonthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var nextMonthStart = thisMonthStart.AddMonths(1);
+        var lastMonthStart = thisMonthStart.AddMonths(-1);
+        var thisYearStart = new DateTime(now.Year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var nextYearStart = thisYearStart.AddYears(1);
+        var lastYearStart = thisYearStart.AddYears(-1);
+
+        async Task<RevenuePeriodDto> Agg(string label, DateTime start, DateTime end)
+        {
+            var q = db.Transactions.Where(t =>
+                t.Status == PaymentStatus.completed && t.CreatedAt >= start && t.CreatedAt < end);
+            var rev = await q.SumAsync(t => (decimal?)t.Amount) ?? 0m;
+            var cnt = await q.CountAsync();
+            return new RevenuePeriodDto(label, rev, cnt);
+        }
+
+        var thisMonth = await Agg(thisMonthStart.ToString("MM/yyyy"), thisMonthStart, nextMonthStart);
+        var lastMonth = await Agg(lastMonthStart.ToString("MM/yyyy"), lastMonthStart, thisMonthStart);
+        var thisYear = await Agg(thisYearStart.ToString("yyyy"), thisYearStart, nextYearStart);
+        var lastYear = await Agg(lastYearStart.ToString("yyyy"), lastYearStart, thisYearStart);
+
+        static double? Growth(decimal cur, decimal prev) =>
+            prev == 0 ? (double?)null : (double)Math.Round((cur - prev) / prev * 100m, 1);
+
+        return new RevenueSummaryResponse(
+            thisMonth, lastMonth, Growth(thisMonth.Revenue, lastMonth.Revenue),
+            thisYear, lastYear, Growth(thisYear.Revenue, lastYear.Revenue));
+    }
+
+    // ── Revenue theo 1 ngay cu the: tong + danh sach giao dich hoan tat trong ngay ──
+    [HttpGet("revenue/day")]
+    public async Task<RevenueDayResponse> GetRevenueByDay([FromQuery] string? date)
+    {
+        var day = DateTime.TryParse(date, out var parsed)
+            ? DateTime.SpecifyKind(parsed.Date, DateTimeKind.Utc)
+            : DateTime.UtcNow.Date;
+        var end = day.AddDays(1);
+
+        // Lay raw roi format o memory (tranh EF dich ToString/enum sang SQL).
+        var raw = await db.Transactions
+            .Where(t => t.Status == PaymentStatus.completed && t.CreatedAt >= day && t.CreatedAt < end)
+            .OrderByDescending(t => t.CreatedAt)
+            .Select(t => new
+            {
+                t.CreatedAt,
+                User = t.User.Username,
+                t.PurchaseKind,
+                SubName = t.SubscriptionPackage != null ? t.SubscriptionPackage.Name : null,
+                t.Method,
+                t.Amount
+            })
+            .ToListAsync();
+
+        var items = raw.Select(r => new RevenueTxnDto(
+            r.CreatedAt.ToString("HH:mm"),
+            r.User,
+            r.PurchaseKind == PurchaseType.subscription_package ? (r.SubName ?? "Gói đăng ký") : "Nạp dung lượng",
+            r.Method.ToString(),
+            r.Amount)).ToList();
+
+        return new RevenueDayResponse(day.ToString("yyyy-MM-dd"), items.Sum(i => i.Amount), items.Count, items);
+    }
+
     // ── Usage: upload (documents) + chat (chat_messages) theo ngay + hoat dong gan day ──
     [HttpGet("usage")]
     public async Task<AdminUsageResponse> GetUsage([FromQuery] int days = 14)

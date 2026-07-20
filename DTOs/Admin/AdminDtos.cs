@@ -25,6 +25,31 @@ public record AdminSubscriptionsResponse(
     Dictionary<string, int> PlanBreakdown
 );
 
+// ── Revenue (admin) ────────────────────────────────────────────────────────
+// Doanh thu tinh tu Transactions co Status = completed.
+public record RevenuePeriodDto(string Label, decimal Revenue, int Transactions);
+public record AdminRevenueResponse(
+    int Year,
+    decimal TotalYear,
+    int TransactionsYear,
+    IEnumerable<RevenuePeriodDto> Quarters,   // Q1..Q4
+    IEnumerable<RevenuePeriodDto> Months,      // 12 thang
+    IEnumerable<int> AvailableYears
+);
+
+// So sanh doanh thu: thang nay vs thang truoc (MoM), nam nay vs nam truoc (YoY).
+// GrowthPercent = null khi ky truoc = 0 (khong the chia).
+public record RevenueSummaryResponse(
+    RevenuePeriodDto ThisMonth, RevenuePeriodDto LastMonth, double? MonthGrowthPercent,
+    RevenuePeriodDto ThisYear, RevenuePeriodDto LastYear, double? YearGrowthPercent
+);
+
+// Chi tiet doanh thu 1 ngay: tong + danh sach giao dich.
+public record RevenueTxnDto(string Time, string User, string Kind, string Method, decimal Amount);
+public record RevenueDayResponse(
+    string Date, decimal Revenue, int Transactions, IEnumerable<RevenueTxnDto> Items
+);
+
 // ── Usage (admin) ──────────────────────────────────────────────────────────
 public record UsageDailyDto(string Date, int Uploads, int Chats);
 public record ActivityDto(string Time, string User, string Action, string Target);
