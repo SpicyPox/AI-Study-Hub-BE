@@ -162,6 +162,71 @@ using (var scope = app.Services.CreateScope())
 
     try
     {
+        await db.Database.ExecuteSqlRawAsync(@"
+            ALTER TABLE ai_study_hub.documents ADD COLUMN IF NOT EXISTS share_token VARCHAR(64);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_share_token ON ai_study_hub.documents (share_token) WHERE share_token IS NOT NULL;
+        ");
+        Console.WriteLine("share_token column added successfully.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine("share_token migration skipped or already applied: " + ex.Message);
+    }
+
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync(@"
+            -- 2FA Columns
+            ALTER TABLE ai_study_hub.users ADD COLUMN IF NOT EXISTS two_factor_enabled BOOLEAN DEFAULT FALSE;
+            ALTER TABLE ai_study_hub.users ADD COLUMN IF NOT EXISTS two_factor_secret VARCHAR(255);
+            ALTER TABLE ai_study_hub.users ADD COLUMN IF NOT EXISTS two_factor_pending_secret VARCHAR(255);
+
+            -- user_sessions Table
+            CREATE TABLE IF NOT EXISTS ai_study_hub.user_sessions (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id UUID NOT NULL REFERENCES ai_study_hub.users(id) ON DELETE CASCADE,
+                refresh_token_hash VARCHAR(255) NOT NULL UNIQUE,
+                device_name VARCHAR(255),
+                user_agent VARCHAR(500),
+                ip_address VARCHAR(64),
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                last_active_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                revoked_at TIMESTAMP WITH TIME ZONE
+            );
+            CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON ai_study_hub.user_sessions(user_id);
+
+            -- document_comments Table
+            CREATE TABLE IF NOT EXISTS ai_study_hub.document_comments (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id UUID NOT NULL REFERENCES ai_study_hub.users(id) ON DELETE CASCADE,
+                document_id UUID NOT NULL REFERENCES ai_study_hub.documents(id) ON DELETE CASCADE,
+                content VARCHAR(1000) NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+            );
+            CREATE INDEX IF NOT EXISTS idx_document_comments_document_id ON ai_study_hub.document_comments(document_id);
+
+            -- document_ratings Table
+            CREATE TABLE IF NOT EXISTS ai_study_hub.document_ratings (
+                user_id UUID NOT NULL REFERENCES ai_study_hub.users(id) ON DELETE CASCADE,
+                document_id UUID NOT NULL REFERENCES ai_study_hub.documents(id) ON DELETE CASCADE,
+                stars INTEGER NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                PRIMARY KEY (user_id, document_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_document_ratings_document_id ON ai_study_hub.document_ratings(document_id);
+        ");
+        Console.WriteLine("Missing tables and 2FA columns created/verified successfully.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine("Database schema migration error: " + ex.Message);
+    }
+
+    try
+    {
         var txns = await db.Transactions.OrderByDescending(t => t.CreatedAt).Take(5).ToListAsync();
         foreach (var t in txns)
         {
@@ -208,6 +273,56 @@ using (var scope = app.Services.CreateScope())
         });
         await db.SaveChangesAsync();
         Console.WriteLine("Admin account seeded: admin@aistudyhub.com / Admin@123456");
+    }
+
+    var studentEmail = "student@aistudyhub.com";
+    var userRole = await db.Roles.FirstOrDefaultAsync(r => r.Name == "user");
+    if (!await db.Users.AnyAsync(u => u.Email == studentEmail) && userRole != null)
+    {
+        var student = new User
+        {
+            Username = "student",
+            Email = studentEmail,
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Student@123456"),
+            RoleId = userRole.Id
+        };
+        db.Users.Add(student);
+        await db.SaveChangesAsync();
+        Console.WriteLine("Student account seeded: student@aistudyhub.com / Student@123456");
+
+        var subject = await db.Subjects.FirstOrDefaultAsync(s => s.Code == "TEST101");
+        if (subject == null)
+        {
+            subject = new Subject
+            {
+                Name = "Môn Học Test Share",
+                Code = "TEST101",
+                Description = "Dùng để gán cho tài liệu test share"
+            };
+            db.Subjects.Add(subject);
+            await db.SaveChangesAsync();
+        }
+
+        var document = new Document
+        {
+            Title = "Tai_Lieu_Huong_Dan_Test.pdf",
+            Description = "Tài liệu mẫu dùng để test chức năng share link",
+            FileType = "pdf",
+            FileSize = 102400,
+            SubjectId = subject.Id,
+            UserId = student.Id,
+            Visibility = DocVisibility.@private,
+            CloudFile = new CloudFile
+            {
+                CloudKey = "sample_cloud_key",
+                CloudUrl = "https://res.cloudinary.com/demo/image/upload/sample.jpg",
+                Provider = "cloudinary",
+                Status = CloudStatus.uploaded
+            }
+        };
+        db.Documents.Add(document);
+        await db.SaveChangesAsync();
+        Console.WriteLine($"Sample document seeded. ID: {document.Id}");
     }
 
     if (!await db.SubscriptionPackages.AnyAsync())

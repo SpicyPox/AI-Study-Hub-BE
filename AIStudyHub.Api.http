@@ -61,3 +61,36 @@ Authorization: Bearer {{AuthToken}}
 
 POST {{HostAddress}}/api/documents/{{documentId}}/summarize
 Authorization: Bearer {{AuthToken}}
+
+###
+
+
+### 7. Tạo link chia sẻ tài liệu (Chỉ Student/User)
+# Đăng nhập bằng tài khoản học sinh, lấy access token điền vào @AuthToken ở đầu file
+POST {{HostAddress}}/api/documents/{{documentId}}/share
+Authorization: Bearer {{AuthToken}}
+
+###
+
+### 8. Lấy thông tin tài liệu qua Share Token (Public - Không cần Authorization Header)
+# Thay thế giá trị token thực tế nhận được từ bước 7
+@shareToken = abcxyz123
+
+GET {{HostAddress}}/api/documents/shared/{{shareToken}}
+
+###
+
+### 9. Preview tài liệu đã được share (Public - Không cần Authorization Header)
+GET {{HostAddress}}/api/documents/{{documentId}}/preview
+
+###
+
+### 10. Download tài liệu đã được share (Public - Không cần Authorization Header)
+GET {{HostAddress}}/api/documents/{{documentId}}/download
+
+###
+
+### 11. Hủy link chia sẻ tài liệu (Chủ sở hữu hủy)
+DELETE {{HostAddress}}/api/documents/{{documentId}}/share
+Authorization: Bearer {{AuthToken}}
+

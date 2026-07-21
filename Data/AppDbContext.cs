@@ -29,6 +29,10 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<UserSession> UserSessions { get; set; }
 
+    public virtual DbSet<DocumentRating> DocumentRatings { get; set; }
+
+    public virtual DbSet<DocumentComment> DocumentComments { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema("ai_study_hub");
@@ -129,6 +133,8 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Visibility).HasColumnName("visibility").HasMaxLength(20)
                 .HasConversion<string>().HasDefaultValue(DocVisibility.@public);
             entity.Property(e => e.IsDeleted).HasDefaultValue(false).HasColumnName("is_deleted");
+            entity.Property(e => e.ShareToken).HasMaxLength(64).HasColumnName("share_token");
+            entity.HasIndex(e => e.ShareToken, "idx_documents_share_token").IsUnique().HasFilter("share_token IS NOT NULL");
             entity.Property(e => e.SubjectId).HasColumnName("subject_id");
             entity.Property(e => e.Title).HasMaxLength(255).HasColumnName("title");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()").HasColumnName("updated_at");
@@ -373,6 +379,49 @@ public partial class AppDbContext : DbContext
             entity.HasOne(d => d.Document).WithMany(p => p.Favorites)
                 .HasForeignKey(d => d.DocumentId)
                 .HasConstraintName("favorites_document_id_fkey");
+        });
+
+        modelBuilder.Entity<DocumentRating>(entity =>
+        {
+            entity.HasKey(e => new { e.UserId, e.DocumentId }).HasName("document_ratings_pkey");
+            entity.ToTable("document_ratings", "ai_study_hub");
+            entity.HasIndex(e => e.DocumentId, "idx_document_ratings_document_id");
+
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+            entity.Property(e => e.DocumentId).HasColumnName("document_id");
+            entity.Property(e => e.Stars).HasColumnName("stars");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()").HasColumnName("updated_at");
+
+            entity.HasOne(d => d.User).WithMany(p => p.DocumentRatings)
+                .HasForeignKey(d => d.UserId)
+                .HasConstraintName("document_ratings_user_id_fkey");
+
+            entity.HasOne(d => d.Document).WithMany(p => p.Ratings)
+                .HasForeignKey(d => d.DocumentId)
+                .HasConstraintName("document_ratings_document_id_fkey");
+        });
+
+        modelBuilder.Entity<DocumentComment>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("document_comments_pkey");
+            entity.ToTable("document_comments", "ai_study_hub");
+            entity.HasIndex(e => e.DocumentId, "idx_document_comments_document_id");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()").HasColumnName("id");
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+            entity.Property(e => e.DocumentId).HasColumnName("document_id");
+            entity.Property(e => e.Content).HasMaxLength(1000).HasColumnName("content");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()").HasColumnName("updated_at");
+
+            entity.HasOne(d => d.User).WithMany(p => p.DocumentComments)
+                .HasForeignKey(d => d.UserId)
+                .HasConstraintName("document_comments_user_id_fkey");
+
+            entity.HasOne(d => d.Document).WithMany(p => p.Comments)
+                .HasForeignKey(d => d.DocumentId)
+                .HasConstraintName("document_comments_document_id_fkey");
         });
 
         modelBuilder.Entity<SubscriptionPackage>(entity =>

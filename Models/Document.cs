@@ -34,6 +34,8 @@ public partial class Document
     /// </summary>
     public bool IsDeleted { get; set; }
 
+    public string? ShareToken { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }
@@ -49,4 +51,8 @@ public partial class Document
     public virtual ICollection<Tag> Tags { get; set; } = new List<Tag>();
 
     public virtual ICollection<Favorite> Favorites { get; set; } = new List<Favorite>();
+
+    public virtual ICollection<DocumentRating> Ratings { get; set; } = new List<DocumentRating>();
+
+    public virtual ICollection<DocumentComment> Comments { get; set; } = new List<DocumentComment>();
 }
