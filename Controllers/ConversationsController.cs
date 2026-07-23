@@ -28,7 +28,7 @@ public class ConversationsController(AppDbContext db, GeminiService gemini, Docu
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create(CreateConversationRequest req)
+    public async Task<IActionResult> Create([FromBody] CreateConversationRequest req)
     {
         var uid = UserId();
         var conv = new ChatSession

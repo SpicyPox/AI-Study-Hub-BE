@@ -2,10 +2,11 @@ using System.ComponentModel.DataAnnotations;
 
 namespace AIStudyHub.Api.DTOs.Chat;
 
-public record CreateConversationRequest(
-    string? Title, 
-    Guid? DocumentId
-);
+public class CreateConversationRequest
+{
+    public string? Title { get; set; }
+    public Guid? DocumentId { get; set; }
+}
 
 public record SendMessageRequest(
     [Required] string Content, 

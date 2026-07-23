@@ -67,7 +67,7 @@ builder.Services.AddAuthorization();
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    if (builder.Environment.IsEnvironment("Testing"))
+    if (builder.Environment.IsEnvironment("Testing") || builder.Environment.IsDevelopment())
     {
         options.AddPolicy("auth", httpContext => RateLimitPartition.GetNoLimiter(string.Empty));
     }
@@ -112,6 +112,8 @@ builder.Services.AddCors(o => o.AddPolicy("Frontend", p =>
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
+        options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+        options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
         options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
     });
 builder.Services.AddEndpointsApiExplorer();
@@ -217,6 +219,22 @@ using (var scope = app.Services.CreateScope())
                 PRIMARY KEY (user_id, document_id)
             );
             CREATE INDEX IF NOT EXISTS idx_document_ratings_document_id ON ai_study_hub.document_ratings(document_id);
+
+            -- ChatSession IsPinned & ChatMessage TokensUsed Columns
+            ALTER TABLE ai_study_hub.chat_sessions ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT FALSE;
+            ALTER TABLE ai_study_hub.chat_messages ADD COLUMN IF NOT EXISTS tokens_used INTEGER DEFAULT 0;
+
+            -- contact_messages Table
+            CREATE TABLE IF NOT EXISTS ai_study_hub.contact_messages (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id UUID REFERENCES ai_study_hub.users(id) ON DELETE SET NULL,
+                name VARCHAR(255) NOT NULL,
+                email VARCHAR(255) NOT NULL,
+                subject VARCHAR(255) NOT NULL,
+                message TEXT NOT NULL,
+                status VARCHAR(50) NOT NULL DEFAULT 'unread',
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+            );
         ");
         Console.WriteLine("Missing tables and 2FA columns created/verified successfully.");
     }
