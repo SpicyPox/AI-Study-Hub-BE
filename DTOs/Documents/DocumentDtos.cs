@@ -9,6 +9,8 @@ public class UploadDocumentRequest
     public Guid? SubjectId { get; set; }
     public bool IsPublic { get; set; }
     public string? Description { get; set; }
+    // Chuoi tags cach nhau boi dau phay (form-data khong ho tro mang gon nhu JSON).
+    public string? Tags { get; set; }
 }
 
 public record ConfirmUploadRequest(

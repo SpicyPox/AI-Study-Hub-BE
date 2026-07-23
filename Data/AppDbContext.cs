@@ -33,6 +33,14 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<DocumentComment> DocumentComments { get; set; }
 
+    public virtual DbSet<Quiz> Quizzes { get; set; }
+
+    public virtual DbSet<QuizQuestion> QuizQuestions { get; set; }
+
+    public virtual DbSet<QuizAttempt> QuizAttempts { get; set; }
+
+    public virtual DbSet<ContactMessage> ContactMessages { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema("ai_study_hub");
@@ -67,6 +75,7 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()").HasColumnName("id");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
             entity.Property(e => e.Title).HasMaxLength(255).HasColumnName("title");
+            entity.Property(e => e.IsPinned).HasDefaultValue(false).HasColumnName("is_pinned");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()").HasColumnName("updated_at");
             entity.Property(e => e.UserId).HasColumnName("user_id");
 
@@ -422,6 +431,91 @@ public partial class AppDbContext : DbContext
             entity.HasOne(d => d.Document).WithMany(p => p.Comments)
                 .HasForeignKey(d => d.DocumentId)
                 .HasConstraintName("document_comments_document_id_fkey");
+        });
+
+        modelBuilder.Entity<Quiz>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("quizzes_pkey");
+            entity.ToTable("quizzes", "ai_study_hub");
+            entity.HasIndex(e => e.UserId, "idx_quizzes_user_id");
+            entity.HasIndex(e => e.DocumentId, "idx_quizzes_document_id");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()").HasColumnName("id");
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+            entity.Property(e => e.DocumentId).HasColumnName("document_id");
+            entity.Property(e => e.Title).HasMaxLength(255).HasColumnName("title");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
+
+            entity.HasOne(d => d.User).WithMany(p => p.Quizzes)
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("quizzes_user_id_fkey");
+
+            entity.HasOne(d => d.Document).WithMany(p => p.Quizzes)
+                .HasForeignKey(d => d.DocumentId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("quizzes_document_id_fkey");
+        });
+
+        modelBuilder.Entity<QuizQuestion>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("quiz_questions_pkey");
+            entity.ToTable("quiz_questions", "ai_study_hub");
+            entity.HasIndex(e => e.QuizId, "idx_quiz_questions_quiz_id");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()").HasColumnName("id");
+            entity.Property(e => e.QuizId).HasColumnName("quiz_id");
+            entity.Property(e => e.QuestionText).HasColumnName("question_text");
+            entity.Property(e => e.OptionA).HasMaxLength(500).HasColumnName("option_a");
+            entity.Property(e => e.OptionB).HasMaxLength(500).HasColumnName("option_b");
+            entity.Property(e => e.OptionC).HasMaxLength(500).HasColumnName("option_c");
+            entity.Property(e => e.OptionD).HasMaxLength(500).HasColumnName("option_d");
+            entity.Property(e => e.CorrectIndex).HasColumnName("correct_index");
+            entity.Property(e => e.Explanation).HasColumnName("explanation");
+            entity.Property(e => e.OrderIndex).HasColumnName("order_index");
+
+            entity.HasOne(d => d.Quiz).WithMany(p => p.Questions)
+                .HasForeignKey(d => d.QuizId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("quiz_questions_quiz_id_fkey");
+        });
+
+        modelBuilder.Entity<QuizAttempt>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("quiz_attempts_pkey");
+            entity.ToTable("quiz_attempts", "ai_study_hub");
+            entity.HasIndex(e => e.QuizId, "idx_quiz_attempts_quiz_id");
+            entity.HasIndex(e => e.UserId, "idx_quiz_attempts_user_id");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()").HasColumnName("id");
+            entity.Property(e => e.QuizId).HasColumnName("quiz_id");
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+            entity.Property(e => e.Score).HasColumnName("score");
+            entity.Property(e => e.TotalQuestions).HasColumnName("total_questions");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
+
+            entity.HasOne(d => d.Quiz).WithMany(p => p.Attempts)
+                .HasForeignKey(d => d.QuizId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("quiz_attempts_quiz_id_fkey");
+
+            entity.HasOne(d => d.User).WithMany(p => p.QuizAttempts)
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("quiz_attempts_user_id_fkey");
+        });
+
+        modelBuilder.Entity<ContactMessage>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("contact_messages_pkey");
+            entity.ToTable("contact_messages", "ai_study_hub");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()").HasColumnName("id");
+            entity.Property(e => e.Name).HasMaxLength(150).HasColumnName("name");
+            entity.Property(e => e.Email).HasMaxLength(255).HasColumnName("email");
+            entity.Property(e => e.Subject).HasMaxLength(255).HasColumnName("subject");
+            entity.Property(e => e.Message).HasColumnName("message");
+            entity.Property(e => e.IsRead).HasDefaultValue(false).HasColumnName("is_read");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
         });
 
         modelBuilder.Entity<SubscriptionPackage>(entity =>

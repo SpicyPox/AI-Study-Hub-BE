@@ -55,6 +55,10 @@ public partial class User
 
     public virtual ICollection<DocumentComment> DocumentComments { get; set; } = new List<DocumentComment>();
 
+    public virtual ICollection<Quiz> Quizzes { get; set; } = new List<Quiz>();
+
+    public virtual ICollection<QuizAttempt> QuizAttempts { get; set; } = new List<QuizAttempt>();
+
     public virtual ICollection<UserSubscription> UserSubscriptions { get; set; } = new List<UserSubscription>();
 
     public virtual UserStorage? UserStorage { get; set; }

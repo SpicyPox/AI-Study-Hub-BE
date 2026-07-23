@@ -55,4 +55,6 @@ public partial class Document
     public virtual ICollection<DocumentRating> Ratings { get; set; } = new List<DocumentRating>();
 
     public virtual ICollection<DocumentComment> Comments { get; set; } = new List<DocumentComment>();
+
+    public virtual ICollection<Quiz> Quizzes { get; set; } = new List<Quiz>();
 }

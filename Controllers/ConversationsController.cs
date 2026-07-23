@@ -20,8 +20,9 @@ public class ConversationsController(AppDbContext db, GeminiService gemini, Docu
         var uid = UserId();
         var convs = await db.ChatSessions
             .Where(c => c.UserId == uid)
-            .OrderByDescending(c => c.UpdatedAt)
-            .Select(c => new ConversationDto(c.Id, c.Title ?? "", c.Documents.Select(d => (Guid?)d.Id).FirstOrDefault(), c.UpdatedAt))
+            .OrderByDescending(c => c.IsPinned)
+            .ThenByDescending(c => c.UpdatedAt)
+            .Select(c => new ConversationDto(c.Id, c.Title ?? "", c.Documents.Select(d => (Guid?)d.Id).FirstOrDefault(), c.UpdatedAt, c.IsPinned))
             .ToListAsync();
         return new ConversationListResponse(convs);
     }
@@ -46,7 +47,30 @@ public class ConversationsController(AppDbContext db, GeminiService gemini, Docu
         }
         db.ChatSessions.Add(conv);
         await db.SaveChangesAsync();
-        return Ok(new { conversation = new ConversationDto(conv.Id, conv.Title, req.DocumentId, conv.UpdatedAt) });
+        return Ok(new { conversation = new ConversationDto(conv.Id, conv.Title, req.DocumentId, conv.UpdatedAt, conv.IsPinned) });
+    }
+
+    [HttpPatch("{id:guid}")]
+    public async Task<IActionResult> Update(Guid id, [FromBody] UpdateConversationRequest req)
+    {
+        var conv = await db.ChatSessions.FirstOrDefaultAsync(c => c.Id == id && c.UserId == UserId())
+            ?? throw new KeyNotFoundException("Cuộc trò chuyện không tồn tại.");
+
+        if (req.Title is not null)
+        {
+            var trimmed = req.Title.Trim();
+            if (trimmed.Length == 0)
+                throw new InvalidOperationException("Tên cuộc trò chuyện không được để trống.");
+            conv.Title = trimmed[..Math.Min(255, trimmed.Length)];
+        }
+        if (req.IsPinned is not null)
+            conv.IsPinned = req.IsPinned.Value;
+
+        await db.SaveChangesAsync();
+
+        await db.Entry(conv).Collection(c => c.Documents).LoadAsync();
+        var docId = conv.Documents.Select(d => (Guid?)d.Id).FirstOrDefault();
+        return Ok(new { conversation = new ConversationDto(conv.Id, conv.Title ?? "", docId, conv.UpdatedAt, conv.IsPinned) });
     }
 
     [HttpDelete("{id:guid}")]

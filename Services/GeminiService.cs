@@ -195,6 +195,134 @@ public class GeminiService(IConfiguration config, IHttpClientFactory httpFactory
         return string.Empty;
     }
 
+    /// <summary>1 câu hỏi trắc nghiệm 4 lựa chọn do Gemini sinh ra, dùng để build QuizQuestion.</summary>
+    public record GeneratedQuizQuestion(string Question, List<string> Options, int CorrectIndex, string? Explanation);
+
+    public async Task<List<GeneratedQuizQuestion>> GenerateQuizAsync(string documentContent, int questionCount, CancellationToken ct)
+    {
+        if (IsStub)
+        {
+            return Enumerable.Range(1, questionCount).Select(i => new GeneratedQuizQuestion(
+                $"[Stub] Câu hỏi mẫu số {i} về tài liệu này?",
+                new List<string> { "Đáp án A", "Đáp án B", "Đáp án C", "Đáp án D" },
+                0,
+                "Đây là quiz demo. Hãy thêm Gemini API key vào appsettings.json để AI sinh câu hỏi thật từ nội dung tài liệu."
+            )).ToList();
+        }
+
+        var systemPrompt =
+            $"Bạn là một giáo viên tạo đề trắc nghiệm. Dựa trên nội dung tài liệu dưới đây, hãy tạo đúng {questionCount} câu hỏi " +
+            "trắc nghiệm 4 lựa chọn (A/B/C/D) bằng tiếng Việt để kiểm tra mức độ hiểu bài của học viên. " +
+            "Mỗi câu chỉ có 1 đáp án đúng. Trả lời CHỈ bằng JSON hợp lệ theo đúng schema, không thêm chữ nào khác.";
+
+        var body = new
+        {
+            contents = new[]
+            {
+                new GeminiContent("user", new List<GeminiPart> { new GeminiPart(documentContent) })
+            },
+            systemInstruction = new
+            {
+                parts = new[] { new GeminiPart(systemPrompt) }
+            },
+            generationConfig = new
+            {
+                maxOutputTokens = 4096,
+                responseMimeType = "application/json",
+                responseSchema = new
+                {
+                    type = "OBJECT",
+                    properties = new
+                    {
+                        questions = new
+                        {
+                            type = "ARRAY",
+                            items = new
+                            {
+                                type = "OBJECT",
+                                properties = new
+                                {
+                                    question = new { type = "STRING" },
+                                    options = new { type = "ARRAY", items = new { type = "STRING" }, minItems = "4", maxItems = "4" },
+                                    correctIndex = new { type = "INTEGER" },
+                                    explanation = new { type = "STRING" },
+                                },
+                                required = new[] { "question", "options", "correctIndex" },
+                            },
+                        },
+                    },
+                    required = new[] { "questions" },
+                },
+            },
+        };
+
+        var http = httpFactory.CreateClient("Gemini");
+        var apiKey = config["Gemini:ApiKey"];
+        var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
+        var bodyJson = JsonSerializer.Serialize(body, _json);
+
+        var jsonStr = await SendWithRetryAsync(http, url, bodyJson, ct);
+        using var doc = JsonDocument.Parse(jsonStr);
+        var text = doc.RootElement
+            .GetProperty("candidates")[0]
+            .GetProperty("content")
+            .GetProperty("parts")[0]
+            .GetProperty("text")
+            .GetString();
+
+        if (string.IsNullOrWhiteSpace(text))
+            throw new InvalidOperationException("AI không trả về nội dung quiz hợp lệ.");
+
+        using var quizDoc = JsonDocument.Parse(text);
+        var result = new List<GeneratedQuizQuestion>();
+        foreach (var q in quizDoc.RootElement.GetProperty("questions").EnumerateArray())
+        {
+            var options = q.GetProperty("options").EnumerateArray().Select(o => o.GetString() ?? "").ToList();
+            if (options.Count != 4) continue; // bo qua cau hoi AI tra sai schema (thieu/thua luachon)
+
+            result.Add(new GeneratedQuizQuestion(
+                q.GetProperty("question").GetString() ?? "",
+                options,
+                q.GetProperty("correctIndex").GetInt32(),
+                q.TryGetProperty("explanation", out var expl) ? expl.GetString() : null
+            ));
+        }
+
+        if (result.Count == 0)
+            throw new InvalidOperationException("AI không tạo được câu hỏi nào từ tài liệu này.");
+
+        return result;
+    }
+
+    /// <summary>Gui request toi Gemini, tu dong thu lai khi gap 429/503 (qua tai tam thoi phia Google).</summary>
+    private static async Task<string> SendWithRetryAsync(HttpClient http, string url, string bodyJson, CancellationToken ct)
+    {
+        const int maxAttempts = 3;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = new StringContent(bodyJson, Encoding.UTF8, "application/json")
+            };
+            using var httpResponse = await http.SendAsync(request, ct);
+
+            var isRetryable = httpResponse.StatusCode is System.Net.HttpStatusCode.ServiceUnavailable
+                or System.Net.HttpStatusCode.TooManyRequests;
+
+            if (httpResponse.IsSuccessStatusCode)
+                return await httpResponse.Content.ReadAsStringAsync(ct);
+
+            if (!isRetryable || attempt == maxAttempts)
+            {
+                httpResponse.EnsureSuccessStatusCode();
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(attempt * 2), ct);
+        }
+
+        throw new InvalidOperationException("Gemini API không phản hồi sau nhiều lần thử lại.");
+    }
+
     private static List<GeminiContent> SanitizeContents(List<GeminiContent> rawContents)
     {
         var sanitized = new List<GeminiContent>();
