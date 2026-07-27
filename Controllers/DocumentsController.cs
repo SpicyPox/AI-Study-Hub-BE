@@ -32,6 +32,7 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
         var query = db.Documents
             .Include(d => d.Subject)
             .Include(d => d.User)
+            .Include(d => d.Tags)
             .Where(d => !d.IsDeleted);
 
         // scope=public  -> browse public documents shared by everyone (the community hub).
@@ -45,7 +46,20 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
 
         if (subjectId.HasValue) query = query.Where(d => d.SubjectId == subjectId);
         if (!string.IsNullOrEmpty(type)) query = query.Where(d => d.FileType == type);
-        if (!string.IsNullOrEmpty(q)) query = query.Where(d => d.Title.ToLower().Contains(q.ToLower()));
+        if (!string.IsNullOrEmpty(q))
+        {
+            var qLower = q.ToLower();
+            // Khop ca ten, mo ta, tags va mon hoc -> lien ket chat che voi thong tin da nhap luc upload.
+            query = query.Where(d =>
+                d.Title.ToLower().Contains(qLower) ||
+                (d.Description != null && d.Description.ToLower().Contains(qLower)) ||
+                d.Tags.Any(t => t.Name.ToLower().Contains(qLower)) ||
+                (d.Subject != null && (
+                    d.Subject.Name.ToLower().Contains(qLower) ||
+                    (d.Subject.Code != null && d.Subject.Code.ToLower().Contains(qLower))
+                ))
+            );
+        }
 
         var docs = await query.OrderByDescending(d => d.UpdatedAt).ToListAsync();
         if (isPublicScope) docs = docs.Where(d => d.Visibility == DocVisibility.@public).ToList();
@@ -68,6 +82,7 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
         var doc = await db.Documents
             .Include(d => d.Subject)
             .Include(d => d.User)
+            .Include(d => d.Tags)
             .FirstOrDefaultAsync(d => d.Id == id)
             ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
 
@@ -121,6 +136,12 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
             }
         };
 
+        if (!string.IsNullOrWhiteSpace(req.Tags))
+        {
+            var tags = await ResolveTagsAsync(req.Tags.Split(','));
+            foreach (var t in tags) doc.Tags.Add(t);
+        }
+
         db.Documents.Add(doc);
         await db.SaveChangesAsync();
 
@@ -137,6 +158,7 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
         var doc = await db.Documents
             .Include(d => d.Subject)
             .Include(d => d.User)
+            .Include(d => d.Tags)
             .FirstOrDefaultAsync(d => d.Id == id && d.UserId == UserId())
             ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
 
@@ -147,6 +169,13 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
         doc.Visibility = req.IsPublic ? DocVisibility.@public : DocVisibility.@private;
         doc.Description = req.Description;
         doc.UpdatedAt = DateTime.UtcNow;
+
+        if (req.Tags is not null)
+        {
+            doc.Tags.Clear();
+            var tags = await ResolveTagsAsync(req.Tags);
+            foreach (var t in tags) doc.Tags.Add(t);
+        }
 
         await db.SaveChangesAsync();
         return await ToDtoAsync(doc);
@@ -159,10 +188,18 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
         var doc = await db.Documents
             .Include(d => d.Subject)
             .Include(d => d.User)
+            .Include(d => d.Tags)
             .FirstOrDefaultAsync(d => d.Id == id && d.UserId == UserId())
             ?? throw new KeyNotFoundException("Tai lieu khong ton tai.");
 
         if (req.Name is not null) doc.Title = req.Name;
+
+        if (req.Tags is not null)
+        {
+            doc.Tags.Clear();
+            var tags = await ResolveTagsAsync(req.Tags);
+            foreach (var t in tags) doc.Tags.Add(t);
+        }
         
         if (req.SubjectId.HasValue) 
         {
@@ -339,6 +376,7 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
         var doc = await db.Documents
             .Include(d => d.Subject)
             .Include(d => d.User)
+            .Include(d => d.Tags)
             .FirstOrDefaultAsync(d => d.ShareToken == token && !d.IsDeleted)
             ?? throw new KeyNotFoundException("Link chia se khong ton tai hoac da bi huy.");
 
@@ -390,6 +428,33 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
         return ToDto(d, avg, count, mine);
     }
 
+    // Tim tag da co (khong phan biet hoa/thuong) hoac tao moi, gioi han 10 tag/tai lieu.
+    private async Task<List<Tag>> ResolveTagsAsync(IEnumerable<string> rawNames)
+    {
+        var names = rawNames
+            .Select(n => n.Trim())
+            .Where(n => n.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(10)
+            .ToList();
+        if (names.Count == 0) return new List<Tag>();
+
+        var lowerNames = names.Select(n => n.ToLower()).ToList();
+        var existing = await db.Tags.Where(t => lowerNames.Contains(t.Name.ToLower())).ToListAsync();
+
+        var result = new List<Tag>(existing);
+        foreach (var name in names)
+        {
+            if (!existing.Any(t => string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase)))
+            {
+                var tag = new Tag { Name = name };
+                db.Tags.Add(tag);
+                result.Add(tag);
+            }
+        }
+        return result;
+    }
+
     private DocumentDto ToDto(Document d, Dictionary<Guid, double> avgMap, Dictionary<Guid, int> countMap, Dictionary<Guid, int> mineMap)
     {
         string? shareUrl = d.ShareToken != null
@@ -398,7 +463,7 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
 
         return new DocumentDto(
             d.Id, d.Title, d.FileType ?? string.Empty, FormatSize(d.FileSize ?? 0),
-            d.Description, Array.Empty<string>(), 0,
+            d.Description, d.Tags?.Select(t => t.Name).ToArray() ?? Array.Empty<string>(), 0,
             d.Visibility == DocVisibility.@public, d.ShareToken, shareUrl,
             d.SubjectId, d.Subject?.Name, null, d.Subject?.Code,
             d.User?.Username ?? string.Empty, d.UpdatedAt, d.CreatedAt,
