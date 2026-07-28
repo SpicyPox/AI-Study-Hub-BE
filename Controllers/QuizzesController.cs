@@ -58,11 +58,10 @@ public class QuizzesController(AppDbContext db, GeminiService gemini, DocumentTe
             .AnyAsync(s => s.UserId == uid && s.Status == "active" && s.EndDate > DateTime.UtcNow, ct);
         if (!hasActiveSubscription)
         {
-            var quizzesToday = await db.Quizzes
-                .CountAsync(q => q.UserId == uid && q.CreatedAt.Date == DateTime.UtcNow.Date, ct);
-            if (quizzesToday >= 1)
+            var quizzesTotal = await db.Quizzes.CountAsync(q => q.UserId == uid, ct);
+            if (quizzesTotal >= 1)
                 throw new InvalidOperationException(
-                    "Bạn đã dùng hết lượt tạo quiz miễn phí hôm nay (1 quiz/ngày). Nâng cấp gói Pro để tạo không giới hạn.");
+                    "Bạn đã dùng hết lượt tạo quiz miễn phí (1 lần thử). Nâng cấp gói Pro để tạo không giới hạn.");
         }
 
         var doc = await db.Documents.Include(d => d.CloudFile)

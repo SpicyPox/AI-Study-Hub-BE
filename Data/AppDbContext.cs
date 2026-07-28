@@ -279,7 +279,6 @@ public partial class AppDbContext : DbContext
         {
             entity.HasKey(e => e.Id).HasName("users_pkey");
             entity.ToTable("users", "ai_study_hub");
-            entity.HasIndex(e => e.Username, "users_username_key").IsUnique();
             entity.HasIndex(e => e.Email, "idx_users_email_lower").IsUnique();
 
             entity.Property(e => e.Id)
@@ -321,6 +320,8 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.TwoFactorPendingSecret)
                 .HasMaxLength(255)
                 .HasColumnName("two_factor_pending_secret");
+
+            entity.Property(e => e.LockedUntil).HasColumnName("locked_until");
         });
 
         modelBuilder.Entity<UserSession>(entity =>
@@ -353,7 +354,7 @@ public partial class AppDbContext : DbContext
             entity.ToTable("user_storage", "ai_study_hub");
 
             entity.Property(e => e.UserId).ValueGeneratedNever().HasColumnName("user_id");
-            entity.Property(e => e.TotalCapacityBytes).HasDefaultValue(10485760L).HasColumnName("total_capacity_bytes");
+            entity.Property(e => e.TotalCapacityBytes).HasDefaultValue(1073741824L).HasColumnName("total_capacity_bytes");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()").HasColumnName("updated_at");
             entity.Property(e => e.UsedBytes).HasDefaultValue(0L).HasColumnName("used_bytes");
 

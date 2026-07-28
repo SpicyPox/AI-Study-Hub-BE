@@ -40,9 +40,6 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
         if (await db.Users.AnyAsync(u => u.Email == lowerEmail))
             throw new InvalidOperationException("Email đã được sử dụng.");
 
-        if (await db.Users.AnyAsync(u => u.Username == req.Name))
-            throw new InvalidOperationException("Tên người dùng đã được sử dụng.");
-
         var code = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
 
         // Hash mật khẩu ngay để không lưu plaintext trong cache.
@@ -94,16 +91,11 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
             throw new InvalidOperationException("Mã xác minh không đúng.");
         }
 
-        // Kiểm tra lại tính duy nhất phòng trường hợp có người chiếm email/tên trong lúc chờ.
+        // Kiểm tra lại tính duy nhất của email phòng trường hợp có người chiếm trong lúc chờ.
         if (await db.Users.AnyAsync(u => u.Email == lowerEmail))
         {
             cache.Remove(key);
             throw new InvalidOperationException("Email đã được sử dụng.");
-        }
-        if (await db.Users.AnyAsync(u => u.Username == pending.Name))
-        {
-            cache.Remove(key);
-            throw new InvalidOperationException("Tên người dùng đã được sử dụng.");
         }
 
         var defaultRole = await db.Roles.FirstOrDefaultAsync(r => r.Name == "user");
@@ -146,6 +138,10 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
 
         if (user == null || !isValid)
             throw new UnauthorizedAccessException("Email hoặc mật khẩu không đúng.");
+
+        if (user.LockedUntil.HasValue && user.LockedUntil.Value > DateTime.UtcNow)
+            throw new UnauthorizedAccessException(
+                $"Tài khoản đã bị khoá đến {user.LockedUntil.Value:dd/MM/yyyy}. Vui lòng liên hệ quản trị viên.");
 
         if (user.TwoFactorEnabled)
         {
@@ -210,6 +206,10 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
             .Include(s => s.User).ThenInclude(u => u.Role)
             .FirstOrDefaultAsync(s => s.RefreshTokenHash == hash && s.RevokedAt == null && s.ExpiresAt > DateTime.UtcNow)
             ?? throw new UnauthorizedAccessException("Refresh token không hợp lệ hoặc đã hết hạn.");
+
+        if (session.User.LockedUntil.HasValue && session.User.LockedUntil.Value > DateTime.UtcNow)
+            throw new UnauthorizedAccessException(
+                $"Tài khoản đã bị khoá đến {session.User.LockedUntil.Value:dd/MM/yyyy}. Vui lòng liên hệ quản trị viên.");
 
         var newRefreshToken = GenerateRefreshToken();
         session.RefreshTokenHash = HashToken(newRefreshToken);
@@ -323,8 +323,6 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
 
         if (req.Name is not null && req.Name != user.Username)
         {
-            if (await db.Users.AnyAsync(u => u.Username == req.Name))
-                throw new InvalidOperationException("Tên người dùng đã được sử dụng.");
             user.Username = req.Name;
         }
 
@@ -585,6 +583,10 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
             return new GoogleAuthResponse("otp_required", null, null, null);
         }
 
+        if (user.LockedUntil.HasValue && user.LockedUntil.Value > DateTime.UtcNow)
+            throw new UnauthorizedAccessException(
+                $"Tài khoản đã bị khoá đến {user.LockedUntil.Value:dd/MM/yyyy}. Vui lòng liên hệ quản trị viên.");
+
         // Tài khoản đã có → đăng nhập + gửi thông báo
         var authResp = await BuildAuthResponseAsync(user, userAgent, ipAddress);
         _ = SendLoginNotificationAsync(user.Email, user.Username);
@@ -617,14 +619,10 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
         if (await db.Users.AnyAsync(u => u.Email == lowerEmail))
             throw new InvalidOperationException("Email đã được sử dụng.");
 
-        var displayName = pending.Name;
-        if (await db.Users.AnyAsync(u => u.Username == displayName))
-            displayName = $"{displayName}_{Guid.NewGuid().ToString()[..4]}";
-
         var defaultRole = await db.Roles.FirstOrDefaultAsync(r => r.Name == "user");
         var user = new User
         {
-            Username     = displayName,
+            Username     = pending.Name,
             Email        = lowerEmail,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString()),
             RoleId       = defaultRole?.Id,
@@ -656,7 +654,7 @@ public class AuthService(AppDbContext db, IConfiguration config, EmailService em
     {
         var storage = await db.UserStorages.FirstOrDefaultAsync(s => s.UserId == userId);
         long used  = storage?.UsedBytes ?? 0;
-        long total = storage?.TotalCapacityBytes ?? 10485760L; // 10 MB mặc định
+        long total = storage?.TotalCapacityBytes ?? 1073741824L; // 1 GB mặc định (Free)
         return new StorageDto(used, total);
     }
 

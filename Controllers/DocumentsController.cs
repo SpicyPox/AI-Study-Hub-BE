@@ -120,7 +120,7 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
 
         var doc = new Document
         {
-            Title = Path.GetFileName(file.FileName),
+            Title = FormatTitleFromFileName(file.FileName),
             Description = req.Description,
             FileType = Path.GetExtension(file.FileName).TrimStart('.').ToLower(),
             FileSize = file.Length,
@@ -397,6 +397,14 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
         if (bytes >= 1_048_576) return $"{bytes / 1_048_576.0:F1} MB";
         if (bytes >= 1_024) return $"{bytes / 1_024.0:F0} KB";
         return $"{bytes} B";
+    }
+
+    // Tieu de hien thi lay tu ten file goc: bo phan mo rong (.docx, .xlsx...) va doi '_' thanh khoang trang
+    // de de doc hon, vd "SWT_Lab1_SU26.pdf" -> "SWT Lab1 SU26".
+    private static string FormatTitleFromFileName(string fileName)
+    {
+        var nameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
+        return nameWithoutExt.Replace('_', ' ').Trim();
     }
 
     private async Task<(Dictionary<Guid, double> Avg, Dictionary<Guid, int> Count, Dictionary<Guid, int> Mine)> LoadRatingsAsync(IEnumerable<Guid> docIds, Guid? uid)

@@ -345,39 +345,15 @@ using (var scope = app.Services.CreateScope())
 
     if (!await db.SubscriptionPackages.AnyAsync())
     {
-        db.SubscriptionPackages.AddRange(
-            new AIStudyHub.Api.Models.SubscriptionPackage
-            {
-                Name = "Sinh Viên",
-                Description = "Dành cho sinh viên: 5 GB lưu trữ, 200 tin nhắn AI/tháng",
-                Price = 29000,
-                DurationDays = 30,
-                AiChatLimit = 200,
-                BaseStorageBytes = 5368709120L,
-                IsActive = true,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
-            },
+        db.SubscriptionPackages.Add(
             new AIStudyHub.Api.Models.SubscriptionPackage
             {
                 Name = "Pro",
-                Description = "Dành cho học viên chuyên sâu: 1 GB, không giới hạn AI",
+                Description = "Dành cho học viên chuyên sâu: 10 GB, không giới hạn AI",
                 Price = 99000,
                 DurationDays = 30,
                 AiChatLimit = 9999,
-                BaseStorageBytes = 1073741824L,
-                IsActive = true,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
-            },
-            new AIStudyHub.Api.Models.SubscriptionPackage
-            {
-                Name = "Pro Năm",
-                Description = "Gói Pro tiết kiệm 12 tháng: 20 GB, không giới hạn AI",
-                Price = 899000,
-                DurationDays = 365,
-                AiChatLimit = 9999,
-                BaseStorageBytes = 21474836480L,
+                BaseStorageBytes = 10737418240L,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
@@ -385,6 +361,38 @@ using (var scope = app.Services.CreateScope())
         );
         await db.SaveChangesAsync();
         Console.WriteLine("Subscription packages seeded.");
+    }
+
+    if (!await db.StoragePackages.AnyAsync())
+    {
+        db.StoragePackages.AddRange(
+            new AIStudyHub.Api.Models.StoragePackage
+            {
+                Name = "1 GB",
+                CapacityBytes = 1073741824L,
+                Price = 19000,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+            },
+            new AIStudyHub.Api.Models.StoragePackage
+            {
+                Name = "5 GB",
+                CapacityBytes = 5368709120L,
+                Price = 79000,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+            },
+            new AIStudyHub.Api.Models.StoragePackage
+            {
+                Name = "20 GB",
+                CapacityBytes = 21474836480L,
+                Price = 199000,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+            }
+        );
+        await db.SaveChangesAsync();
+        Console.WriteLine("Storage packages seeded.");
     }
 }
 

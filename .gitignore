@@ -24,3 +24,7 @@ client_secret*.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Tool-generated cache/debris (not part of the app)
+target/
+graphify-out/

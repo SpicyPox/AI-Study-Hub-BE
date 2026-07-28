@@ -105,6 +105,18 @@ public class ConversationsController(AppDbContext db, GeminiService gemini, Docu
         var conv = await db.ChatSessions.FirstOrDefaultAsync(c => c.Id == id && c.UserId == uid, ct)
             ?? throw new KeyNotFoundException("Cuộc trò chuyện không tồn tại.");
 
+        var hasActiveSubscription = await db.UserSubscriptions
+            .AnyAsync(s => s.UserId == uid && s.Status == "active" && s.EndDate > DateTime.UtcNow, ct);
+        if (!hasActiveSubscription)
+        {
+            var messagesToday = await db.ChatMessages
+                .CountAsync(m => m.Role == ChatRole.user && m.Session.UserId == uid
+                    && m.CreatedAt.Date == DateTime.UtcNow.Date, ct);
+            if (messagesToday >= 10)
+                throw new InvalidOperationException(
+                    "Bạn đã dùng hết 10 tin nhắn AI miễn phí hôm nay. Nâng cấp gói Pro để chat không giới hạn.");
+        }
+
         // Fetch history before saving current user message
         var history = await db.ChatMessages
             .Where(m => m.SessionId == id)

@@ -39,6 +39,9 @@ public partial class User
     /// <summary>Secret tạm sinh ra khi người dùng bấm "Bật 2FA" nhưng chưa nhập mã xác nhận lần đầu.</summary>
     public string? TwoFactorPendingSecret { get; set; }
 
+    /// <summary>Admin khóa tài khoản có thời hạn đến thời điểm này (null = không bị khóa). Hết hạn thì tự động coi như đã mở khóa.</summary>
+    public DateTime? LockedUntil { get; set; }
+
     public virtual ICollection<UserSession> Sessions { get; set; } = new List<UserSession>();
 
     public virtual ICollection<ChatSession> ChatSessions { get; set; } = new List<ChatSession>();

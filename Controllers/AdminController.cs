@@ -23,15 +23,16 @@ public class AdminController(AppDbContext db, CloudinaryService cloudinary) : Co
             query = query.Where(u => u.Username.ToLower().Contains(q.ToLower()) || u.Email.ToLower().Contains(q.ToLower()));
 
         var total = await query.CountAsync();
+        var now = DateTime.UtcNow;
         var users = await query
             .OrderByDescending(u => u.CreatedAt)
             .Skip((page - 1) * 20).Take(20)
             .Select(u => new AdminUserDto(
                 u.Id, u.Username, u.Email, u.Role != null ? u.Role.Name : "user",
-                "active",
+                u.LockedUntil != null && u.LockedUntil > now ? "locked" : "active",
                 u.Documents.Count, u.Documents.Sum(d => d.FileSize ?? 0),
                 u.ChatSessions.SelectMany(c => c.ChatMessages).Sum(m => m.TokensUsed),
-                u.CreatedAt))
+                u.CreatedAt, u.LockedUntil))
             .ToListAsync();
 
         return new AdminUserListResponse(users, total);
@@ -60,6 +61,9 @@ public class AdminController(AppDbContext db, CloudinaryService cloudinary) : Co
     [HttpPatch("users/{id:guid}/role")]
     public async Task<IActionResult> UpdateUserRole(Guid id, UpdateUserRoleRequest req)
     {
+        if (id == UserId() && !string.Equals(req.Role, "admin", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Không thể tự hạ quyền tài khoản admin đang đăng nhập.");
+
         var user = await db.Users.FindAsync(id)
             ?? throw new KeyNotFoundException("Người dùng không tồn tại.");
 
@@ -81,6 +85,34 @@ public class AdminController(AppDbContext db, CloudinaryService cloudinary) : Co
             ?? throw new KeyNotFoundException("Người dùng không tồn tại.");
 
         db.Users.Remove(user);
+        await db.SaveChangesAsync();
+        return Ok();
+    }
+
+    [HttpPatch("users/{id:guid}/lock")]
+    public async Task<IActionResult> LockUser(Guid id, LockUserRequest req)
+    {
+        if (id == UserId())
+            throw new InvalidOperationException("Không thể tự khoá chính tài khoản admin đang đăng nhập.");
+
+        if (req.Months != 6 && req.Months != 12)
+            throw new InvalidOperationException("Thời hạn khoá chỉ hỗ trợ 6 hoặc 12 tháng.");
+
+        var user = await db.Users.FindAsync(id)
+            ?? throw new KeyNotFoundException("Người dùng không tồn tại.");
+
+        user.LockedUntil = DateTime.UtcNow.AddMonths(req.Months);
+        await db.SaveChangesAsync();
+        return Ok();
+    }
+
+    [HttpPatch("users/{id:guid}/unlock")]
+    public async Task<IActionResult> UnlockUser(Guid id)
+    {
+        var user = await db.Users.FindAsync(id)
+            ?? throw new KeyNotFoundException("Người dùng không tồn tại.");
+
+        user.LockedUntil = null;
         await db.SaveChangesAsync();
         return Ok();
     }
