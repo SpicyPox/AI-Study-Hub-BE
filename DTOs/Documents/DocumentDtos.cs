@@ -50,9 +50,13 @@ public record CreateCommentRequest(
     [Required, MinLength(1), MaxLength(1000)] string Content
 );
 
+public record UpdateCommentRequest(
+    [Required, MinLength(1), MaxLength(1000)] string Content
+);
+
 public record CommentDto(
     Guid Id, string Content, string AuthorName, Guid AuthorId,
-    DateTime CreatedAt, bool IsMine
+    DateTime CreatedAt, DateTime UpdatedAt, bool IsMine
 );
 
 public record CommentListResponse(IEnumerable<CommentDto> Comments, int Total);

@@ -107,6 +107,13 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
         if (file.Length > MaxUploadBytes)
             return BadRequest("File vuot qua gioi han 50 MB.");
 
+        // He thong chua ho tro AI doc noi dung anh (DocumentTextExtractor khong OCR duoc) nen
+        // khong nhan upload dang file anh - chan ca o day (khong chi o FE) de tranh bi bypass
+        // qua goi thang API.
+        var uploadExt = Path.GetExtension(file.FileName).TrimStart('.').ToLower();
+        if (ImageTypes.Contains(uploadExt))
+            return BadRequest("Hệ thống chưa hỗ trợ upload file ảnh.");
+
         // Kiểm tra SubjectId có tồn tại không (tránh lỗi FK constraint)
         if (req.SubjectId.HasValue)
         {
@@ -531,7 +538,7 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
             .ToListAsync();
 
         var dtos = comments.Select(c => new CommentDto(
-            c.Id, c.Content, c.User.Username, c.UserId, c.CreatedAt,
+            c.Id, c.Content, c.User.Username, c.UserId, c.CreatedAt, c.UpdatedAt,
             uid.HasValue && c.UserId == uid.Value
         ));
         return new CommentListResponse(dtos, comments.Count);
@@ -551,7 +558,26 @@ public class DocumentsController(AppDbContext db, CloudinaryService cloudinary, 
         db.DocumentComments.Add(comment);
         await db.SaveChangesAsync();
 
-        return new CommentDto(comment.Id, comment.Content, user.Username, uid, comment.CreatedAt, true);
+        return new CommentDto(comment.Id, comment.Content, user.Username, uid, comment.CreatedAt, comment.UpdatedAt, true);
+    }
+
+    [Authorize]
+    [HttpPatch("{id:guid}/comments/{commentId:guid}")]
+    public async Task<CommentDto> UpdateComment(Guid id, Guid commentId, UpdateCommentRequest req)
+    {
+        var uid = UserId();
+        var comment = await db.DocumentComments.Include(c => c.User)
+            .FirstOrDefaultAsync(c => c.Id == commentId && c.DocumentId == id)
+            ?? throw new KeyNotFoundException("Binh luan khong ton tai.");
+
+        if (comment.UserId != uid)
+            throw new UnauthorizedAccessException("Bạn không có quyền sửa bình luận này.");
+
+        comment.Content = req.Content.Trim();
+        comment.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        return new CommentDto(comment.Id, comment.Content, comment.User.Username, uid, comment.CreatedAt, comment.UpdatedAt, true);
     }
 
     [Authorize]
